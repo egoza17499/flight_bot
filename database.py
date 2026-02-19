@@ -48,6 +48,20 @@ async def add_user(user_id, username):
 async def update_user_field(user_id, field, value):
     pool = await get_pool()
     async with pool.acquire() as conn:
+        # Список полей с датами
+        date_fields = [
+            'vacation_start', 'vacation_end', 'vlk_date', 'umo_date',
+            'kbp_4_md_m', 'kbp_7_md_m', 'kbp_4_md_90a', 'kbp_7_md_90a', 'jumps_date'
+        ]
+        
+        # Если поле - дата, преобразуем строку в объект date
+        if field in date_fields and value:
+            try:
+                value = datetime.strptime(value, "%d.%m.%Y").date()
+            except (ValueError, TypeError):
+                # Если не удалось распарсить, оставляем None
+                value = None
+        
         query = f"UPDATE users SET {field} = $1 WHERE user_id = $2"
         await conn.execute(query, value, user_id)
 
