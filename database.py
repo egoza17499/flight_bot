@@ -29,7 +29,7 @@ async def init_db():
                 registered BOOLEAN DEFAULT FALSE
             )
         """)
-        # Таблица для "полезной информации"
+        # Таблица для "полезной информации" (аэродромы, телефоны и т.д.)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS info_base (
                 id SERIAL PRIMARY KEY,
@@ -120,3 +120,16 @@ async def delete_user(user_id):
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM users WHERE user_id = $1", user_id)
+
+async def delete_info(keyword):
+    """Удалить информацию из базы по ключевому слову"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM info_base WHERE keyword = $1", keyword)
+
+async def get_all_info():
+    """Получить всю информацию из базы (для админа)"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT keyword, content FROM info_base")
+        return [dict(row) for row in rows]
