@@ -4,9 +4,9 @@ class Registration(StatesGroup):
     fio = State()
     rank = State()
     qual_rank = State()
-    vacation = State() # Вводим сразу диапазон
+    vacation = State()
     vlk = State()
-    umo = State() # Опционально
+    umo = State()
     kbp_4_md_m = State()
     kbp_7_md_m = State()
     kbp_4_md_90a = State()
@@ -14,8 +14,12 @@ class Registration(StatesGroup):
     jumps = State()
 
 class EditProfile(StatesGroup):
-    choosing_field = State()
     entering_value = State()
 
 class SearchInfo(StatesGroup):
     waiting_query = State()
+
+class AdminStates(StatesGroup):
+    searching = State()
+    adding_info = State()
+    deleting_info = State()
