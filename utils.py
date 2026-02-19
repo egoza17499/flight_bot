@@ -170,4 +170,31 @@ def check_flight_ban(user_data):
     # КБП проверки
     if is_expired(user_data.get('kbp_4_md_m'), 6):
         bans.append("🚫 Запрет полетов: КБП-4 (Ил-76 МД-М) просрочен")
-    if is_expired
+    if is_expired(user_data.get('kbp_7_md_m'), 12):
+        bans.append("🚫 Запрет полетов: КБП-7 (Ил-76 МД-М) просрочен")
+    if is_expired(user_data.get('kbp_4_md_90a'), 6):
+        bans.append("🚫 Запрет полетов: КБП-4 (Ил-76 МД-90А) просрочен")
+    if is_expired(user_data.get('kbp_7_md_90a'), 12):
+        bans.append("🚫 Запрет полетов: КБП-7 (Ил-76 МД-90А) просрочен")
+        
+    # ВЛК и УМО
+    vlk = parse_date(user_data.get('vlk_date'))
+    umo = parse_date(user_data.get('umo_date'))
+    
+    if vlk and vlk != 'exempt':
+        days_since_vlk = (today - vlk).days
+        if days_since_vlk > 365:  # 12 месяцев
+            bans.append("🚫 Запрет полетов: ВЛК просрочена (>12 мес)")
+        elif days_since_vlk > 180 and (not umo or umo == 'exempt'):  # > 6 мес и нет УМО
+            bans.append("🚫 Запрет полетов: ВЛК > 6 мес без УМО")
+             
+    if is_expired(user_data.get('vacation_end'), 12):
+        bans.append("🚫 Запрет полетов: Отпуск (>12 мес)")
+        
+    # Прыжки - проверяем только если не освобожден
+    jumps = user_data.get('jumps_date')
+    if jumps and not (isinstance(jumps, str) and jumps.lower() in ['освобожден', 'освобождён', 'осв']):
+        if is_expired(jumps, 12):
+            bans.append("🚫 Запрет полетов: Прыжки (>12 мес)")
+        
+    return bans
