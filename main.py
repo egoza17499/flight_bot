@@ -1,4 +1,4 @@
-import os  # ✅ Добавлен импорт!
+import os
 import asyncio
 import logging
 from aiohttp import web
@@ -10,7 +10,9 @@ from database import init_db
 from handlers import router
 from scheduler import start_scheduler
 
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 async def health_check(request):
     """Health check endpoint для Render"""
@@ -31,33 +33,53 @@ async def start_web_server():
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
     
-    logging.info(f"✅ Web server started on port {port}")
-    logging.info(f"✅ Health check: http://localhost:{port}/health")
+    logger.info(f"✅ Web-сервер запущен на порту {port}")
+    logger.info(f"✅ Проверка: http://localhost:{port}/health")
 
 async def main():
+    """Основная функция запуска бота"""
+    logger.info("🚀 Запуск бота...")
+    
+    # Создаем бота и диспетчер
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     
+    # Подключаем роутер с обработчиками
     dp.include_router(router)
     
     # Инициализация базы данных
+    logger.info("📊 Инициализация базы данных...")
     await init_db()
+    logger.info("✅ База данных готова")
     
-    # Удаляем webhook (если был установлен)
+    # 🔴 ВАЖНО: Удаляем webhook (чтобы не было конфликтов с polling)
+    logger.info("🔄 Удаляем webhook...")
     await bot.delete_webhook(drop_pending_updates=True)
+    logger.info("✅ Webhook удален")
     
-    # Запуск простого веб-сервера для Render (чтобы не было ошибок)
+    # Запуск веб-сервера для Render (health check)
+    logger.info("🌐 Запуск веб-сервера...")
     await start_web_server()
     
     # Запуск планировщика уведомлений
+    logger.info("⏰ Запуск планировщика...")
     start_scheduler(bot)
+    logger.info("✅ Планировщик запущен")
     
     # Запуск polling (опрос Telegram)
-    logging.info("🚀 Starting bot polling...")
-    await dp.start_polling(bot)
+    logger.info("🤖 Запуск опроса бота...")
+    try:
+        await dp.start_polling(bot)
+    except Exception as e:
+        logger.error(f"❌ Ошибка polling: {e}")
+    finally:
+        await bot.session.close()
+        logger.info("🛑 Бот остановлен")
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logging.info("❌ Bot stopped by user")
+        logger.info("❌ Бот остановлен пользователем")
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка: {e}")
