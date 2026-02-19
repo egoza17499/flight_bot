@@ -85,6 +85,13 @@ def generate_profile_text(user_data):
     kbp_7_md_90a = parse_date(user_data.get('kbp_7_md_90a'))
     jumps = user_data.get('jumps_date')  # Может быть "освобожден"
     
+    today = datetime.now().date()
+    
+    # Вычисляем предельную дату для УМО (ВЛК + 12 месяцев)
+    vlk_expiry_date = None
+    if vlk_date and vlk_date != 'exempt':
+        vlk_expiry_date = vlk_date + timedelta(days=365)  # 12 месяцев
+    
     # Функция для красивой строки
     def line(name, date_val, limit_m):
         # Проверяем на "освобожден"
@@ -94,50 +101,65 @@ def generate_profile_text(user_data):
         if date_val is None:
             return f"⚪ <b>{name}:</b> Нет данных\n"
         
+        # Стандартная проверка
         status, msg = check_status(date_val, limit_m)
         color_map = {'green': '🟢', 'yellow': '🟡', 'red': '🔴', 'blue': '🔵'}
         date_str = date_val.strftime("%d.%m.%Y") if hasattr(date_val, 'strftime') else str(date_val)
         return f"{color_map.get(status, '⚪')} <b>{name}:</b> {date_str} ({msg})\n"
+    
+    # Функция для УМО (проверка относительно ВЛК + 12 месяцев)
+    def umo_line(name, umo_date_val, vlk_expiry):
+        if isinstance(umo_date_val, str) and umo_date_val.lower() in ['освобожден', 'освобождён', 'осв']:
+            return f"🔵 <b>{name}:</b> Освобожден\n"
+        
+        if umo_date_val is None:
+            return f"⚪ <b>{name}:</b> Не пройдено\n"
+        
+        if vlk_expiry is None:
+            return f"⚪ <b>{name}:</b> Нет данных ВЛК\n"
+        
+        # Проверяем УМО относительно даты ВЛК + 12 месяцев
+        days_until_vlk_expiry = (vlk_expiry - today).days
+        umo_str = umo_date_val.strftime('%d.%m.%Y') if hasattr(umo_date_val, 'strftime') else str(umo_date_val)
+        
+        if days_until_vlk_expiry < 0:
+            # ВЛК просрочена, значит УМО тоже просрочено
+            return f"🔴 <b>{name}:</b> {umo_str} (Просрочено вместе с ВЛК)\n"
+        elif days_until_vlk_expiry < 30:
+            return f"🟡 <b>{name}:</b> {umo_str} (Осталось {days_until_vlk_expiry} дн.)\n"
+        else:
+            return f"🟢 <b>{name}:</b> {umo_str} (Действует, осталось {days_until_vlk_expiry} дн.)\n"
 
     # Отпуск (12 месяцев от даты окончания)
     text += line("Отпуск (конец):", vacation_end, 12)
     
     # ВЛК с учетом УМО
-    today = datetime.now().date()
-    vlk_status_text = ""
     if vlk_date is None:
-        vlk_status_text = "⚪ <b>ВЛК:</b> Нет данных\n"
+        text += "⚪ <b>ВЛК:</b> Нет данных\n"
     elif vlk_date == 'exempt':
-        vlk_status_text = "🔵 <b>ВЛК:</b> Освобожден\n"
+        text += "🔵 <b>ВЛК:</b> Освобожден\n"
     else:
         days_since_vlk = (today - vlk_date).days
         
         if days_since_vlk > 365:  # > 12 месяцев
-            vlk_status_text = f"🔴 <b>ВЛК:</b> {vlk_date.strftime('%d.%m.%Y')} (Просрочена на {days_since_vlk - 365} дн.)\n"
+            text += f"🔴 <b>ВЛК:</b> {vlk_date.strftime('%d.%m.%Y')} (Просрочена на {days_since_vlk - 365} дн.)\n"
         elif days_since_vlk > 180 and (umo_date is None or umo_date == 'exempt'):  # > 6 мес и нет УМО
-            vlk_status_text = f"🔴 <b>ВЛК:</b> {vlk_date.strftime('%d.%m.%Y')} (ТРЕБУЕТСЯ УМО)\n"
+            text += f"🔴 <b>ВЛК:</b> {vlk_date.strftime('%d.%m.%Y')} (ТРЕБУЕТСЯ УМО)\n"
         elif days_since_vlk > 180 and umo_date is not None and umo_date != 'exempt':  # > 6 мес но есть УМО
             remaining = 365 - days_since_vlk
-            vlk_status_text = f"🟢 <b>ВЛК:</b> {vlk_date.strftime('%d.%m.%Y')} (Действует с УМО, осталось {remaining} дн.)\n"
+            text += f"🟢 <b>ВЛК:</b> {vlk_date.strftime('%d.%m.%Y')} (Действует с УМО, осталось {remaining} дн.)\n"
         else:  # <= 6 месяцев
             remaining = 180 - days_since_vlk
-            vlk_status_text = f"🟢 <b>ВЛК:</b> {vlk_date.strftime('%d.%m.%Y')} (Действует, осталось {remaining} дн.)\n"
-    text += vlk_status_text
+            text += f"🟢 <b>ВЛК:</b> {vlk_date.strftime('%d.%m.%Y')} (Действует, осталось {remaining} дн.)\n"
     
-    # УМО
-    if umo_date is None:
-        text += "⚪ <b>УМО:</b> Не пройдено\n"
-    elif isinstance(umo_date, str) and umo_date.lower() in ['освобожден', 'освобождён', 'осв']:
-        text += "🔵 <b>УМО:</b> Освобожден\n"
-    elif umo_date == 'exempt':
-        text += "🔵 <b>УМО:</b> Освобожден\n"
-    else:
-        text += f"🟢 <b>УМО:</b> {umo_date.strftime('%d.%m.%Y')}\n"
+    # УМО (действует только если ВЛК действительна, и до даты ВЛК + 12 месяцев)
+    text += umo_line("УМО:", umo_date, vlk_expiry_date)
     
     # КБП проверки
     text += line("КБП-4 (Ил-76 МД-М):", kbp_4_md_m, 6)
     text += line("КБП-7 (Ил-76 МД-М):", kbp_7_md_m, 12)
     text += line("КБП-4 (Ил-76 МД-90А):", kbp_4_md_90a, 6)
+    # Для КБП-7 МД-90А используем стандартную проверку (12 месяцев)
     text += line("КБП-7 (Ил-76 МД-90А):", kbp_7_md_90a, 12)
     
     # Прыжки (может быть "освобожден")
