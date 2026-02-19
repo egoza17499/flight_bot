@@ -2,6 +2,7 @@ import asyncio
 from aiogram import Router, F, types
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from database import add_user, update_user_field, set_registered, get_user, get_all_users, search_info
 from states import Registration, EditProfile, SearchInfo
 from keyboards import get_main_menu, get_edit_menu, FIELD_MAP
@@ -208,3 +209,4 @@ async def admin_search_by_name(message: types.Message):
             text = generate_profile_text(u)
             await message.answer(text)
     # else ничего не делаем, чтобы не спамить в чат обычными сообщениями
+
