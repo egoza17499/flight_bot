@@ -38,7 +38,6 @@ async def init_db():
             )
         """)
 
-# Функции CRUD
 async def add_user(user_id, username):
     """Добавить нового пользователя или обновить username"""
     pool = await get_pool()
@@ -74,3 +73,50 @@ async def update_user_field(user_id, field, value):
         if field == 'jumps_date' and value:
             if isinstance(value, str) and value.lower() in ['освобожден', 'освобождён', 'осв']:
                 value = 'освобожден'  # Сохраняем как текст
+            else:
+                try:
+                    value = datetime.strptime(value, "%d.%m.%Y").date()
+                except (ValueError, TypeError):
+                    value = None
+        
+        query = f"UPDATE users SET {field} = $1 WHERE user_id = $2"
+        await conn.execute(query, value, user_id)
+
+async def set_registered(user_id):
+    """Отметить пользователя как зарегистрированного"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE users SET registered = TRUE WHERE user_id = $1", user_id)
+
+async def get_user(user_id):
+    """Получить данные пользователя по user_id"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM users WHERE user_id = $1", user_id)
+        return dict(row) if row else None
+
+async def get_all_users():
+    """Получить всех зарегистрированных пользователей"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT * FROM users WHERE registered = TRUE")
+        return [dict(row) for row in rows]
+
+async def search_info(keyword):
+    """Поиск информации по ключевому слову"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT content FROM info_base WHERE keyword ILIKE $1", f"%{keyword}%")
+        return [row['content'] for row in rows]
+
+async def add_info(keyword, content):
+    """Добавить информацию в базу (для админа)"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("INSERT INTO info_base (keyword, content) VALUES ($1, $2)", keyword, content)
+
+async def delete_user(user_id):
+    """Удалить пользователя из базы"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM users WHERE user_id = $1", user_id)
