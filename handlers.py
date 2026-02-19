@@ -45,11 +45,33 @@ async def reg_qual(message: types.Message, state: FSMContext):
 
 @router.message(Registration.vacation)
 async def reg_vacation(message: types.Message, state: FSMContext):
-    # Простая проверка формата, в идеале нужно парсить
-    await update_user_field(message.from_user.id, 'vacation_start', message.text.split('-')[0].strip())
-    await update_user_field(message.from_user.id, 'vacation_end', message.text.split('-')[1].strip())
-    await state.set_state(Registration.vlk)
-    await message.answer("5️⃣ Введите дату прохождения ВЛК (ДД.ММ.ГГГГ):")
+    try:
+        # Проверяем что есть дефис в сообщении
+        if '-' not in message.text:
+            await message.answer("❌ Неверный формат! Используйте: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ\nНапример: 01.06.2025 - 01.07.2025")
+            return
+        
+        parts = message.text.split('-')
+        if len(parts) != 2:
+            await message.answer("❌ Ошибка формата! Введите две даты через дефис: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ")
+            return
+        
+        vacation_start = parts[0].strip()
+        vacation_end = parts[1].strip()
+        
+        # Простая проверка что это похоже на дату
+        if len(vacation_start) != 10 or len(vacation_end) != 10:
+            await message.answer("❌ Даты должны быть в формате ДД.ММ.ГГГГ")
+            return
+        
+        await update_user_field(message.from_user.id, 'vacation_start', vacation_start)
+        await update_user_field(message.from_user.id, 'vacation_end', vacation_end)
+        
+        await state.set_state(Registration.vlk)
+        await message.answer("5️⃣ Введите дату прохождения ВЛК (ДД.ММ.ГГГГ):")
+        
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {e}\nПопробуйте еще раз в формате: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ")
 
 @router.message(Registration.vlk)
 async def reg_vlk(message: types.Message, state: FSMContext):
@@ -250,3 +272,4 @@ async def admin_search_by_name(message: types.Message):
             text = generate_profile_text(u)
             await message.answer(text)
     # else ничего не делаем, чтобы не спамить в чат обычными сообщениями
+
