@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 # ========== ХРАНЕНИЕ ПОСЛЕДНИХ СООБЩЕНИЙ БОТА ==========
-# Словарь: {chat_id: message_id}
 last_bot_messages = {}
 
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
@@ -38,27 +37,19 @@ async def delete_message_safe(message: types.Message):
         logger.debug(f"Не удалось удалить сообщение: {e}")
 
 async def cleanup_last_bot_message(message: types.Message):
-    """
-    Удаляет последнее сообщение бота в чате.
-    Работает автоматически - не требует ответа на сообщение.
-    """
+    """Удаляет последнее сообщение бота в чате"""
     chat_id = message.chat.id
-    
-    # Если есть сохраненное ID последнего сообщения бота - удаляем
     if chat_id in last_bot_messages:
         try:
             await message.bot.delete_message(chat_id, last_bot_messages[chat_id])
         except Exception as e:
             logger.debug(f"Не удалось удалить старое сообщение: {e}")
         finally:
-            # Удаляем из словаря в любом случае
             if chat_id in last_bot_messages:
                 del last_bot_messages[chat_id]
 
 async def send_and_save(message: types.Message, text: str, **kwargs):
-    """
-    Отправляет сообщение и сохраняет его ID для последующего удаления.
-    """
+    """Отправляет сообщение и сохраняет его ID"""
     sent_message = await message.answer(text, **kwargs)
     last_bot_messages[message.chat.id] = sent_message.message_id
     return sent_message
@@ -74,7 +65,6 @@ def is_admin_check(user_id):
 @router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
     await cleanup_last_bot_message(message)
-    
     await add_user(message.from_user.id, message.from_user.username)
     user = await get_user(message.from_user.id)
     admin = is_admin_check(message.from_user.id)
@@ -227,7 +217,7 @@ async def process_search(message: types.Message, state: FSMContext):
     results = await search_info(message.text)
     if results:
         for res in results:
-            await message.answer(res)  # Результаты поиска не удаляем
+            await message.answer(res)
     else:
         await send_and_save(message, "❌ Информация не найдена, извините.")
     await state.clear()
@@ -324,27 +314,51 @@ async def admin_fill_airports_callback(callback: types.CallbackQuery):
     if not is_admin_check(callback.from_user.id):
         return
     
-    await callback.message.answer("⏳ Заполняю базу аэродромов...")
+    # Шаг 1: Проверяем что AIRPORTS загрузился
+    try:
+        airport_count = len(AIRPORTS)
+        logger.info(f"🛫 AIRPORTS загружен: {airport_count} записей")
+        await callback.message.answer(
+            f"📋 <b>Загружено {airport_count} аэродромов</b>\n\n"
+            f"⏳ Начинаю заполнение базы..."
+        )
+    except Exception as e:
+        logger.error(f"❌ Ошибка доступа к AIRPORTS: {e}")
+        await callback.message.answer(f"❌ Ошибка: {e}")
+        return
     
+    await callback.answer()
+    
+    # Шаг 2: Заполняем с логированием
     success_count = 0
     error_count = 0
     
-    for keyword, content in AIRPORTS:
+    for i, (keyword, content) in enumerate(AIRPORTS, 1):
         try:
             await add_info(keyword, content)
             success_count += 1
-            await asyncio.sleep(0.05)
+            
+            # Логируем каждые 25 аэродромов
+            if i % 25 == 0:
+                logger.info(f"✅ Прогресс: {i}/{airport_count}")
+            
+            # Небольшая пауза чтобы не блокировать
+            await asyncio.sleep(0.03)
+            
         except Exception as e:
             error_count += 1
-            logger.error(f"Ошибка {keyword}: {e}")
+            logger.error(f"❌ Ошибка {keyword}: {e}")
+    
+    # Шаг 3: Финальный отчет
+    logger.info(f"✅ ЗАВЕРШЕНО! Успешно: {success_count}, Ошибок: {error_count}")
     
     await callback.message.answer(
-        f"✅ Заполнено!\n\n"
+        f"✅ <b>Заполнение завершено!</b>\n\n"
         f"📊 <b>Статистика:</b>\n"
         f"✅ Успешно: {success_count}\n"
-        f"❌ Ошибок: {error_count}"
+        f"❌ Ошибок: {error_count}\n\n"
+        f"Теперь можно искать аэродромы через '📚 Полезная информация'"
     )
-    await callback.answer()
 
 @router.callback_query(F.data == "admin_manage")
 async def admin_manage_callback(callback: types.CallbackQuery):
