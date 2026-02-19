@@ -5,7 +5,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from database import add_user, update_user_field, set_registered, get_user, get_all_users, search_info
 from states import Registration, EditProfile, SearchInfo
-from keyboards import get_main_menu, get_edit_menu, FIELD_MAP
+from keyboards import get_main_menu, get_edit_menu, FIELD_MAP, FIELD_NAMES
 from utils import parse_date, generate_profile_text, check_flight_ban
 from config import ADMIN_ID
 
@@ -122,38 +122,79 @@ async def show_profile(message: types.Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✏️ Редактировать", callback_data="edit_start")]])
     await message.answer(text, reply_markup=kb)
 
+# --- РЕДАКТИРОВАНИЕ ПРОФИЛЯ ---
+
 @router.callback_query(F.data == "edit_start")
 async def start_edit(callback: types.CallbackQuery):
-    await callback.message.edit_text("Выберите параметр для редактирования:", reply_markup=get_edit_menu())
+    await callback.message.edit_text("✏️ Выберите параметр для редактирования:", reply_markup=get_edit_menu())
+    await callback.answer()
 
 @router.callback_query(F.data.startswith("edit_"))
 async def choose_field_edit(callback: types.CallbackQuery, state: FSMContext):
     field_key = callback.data.replace("edit_", "")
-    # Находим человеческое название для подсказки
-    human_name = [k for k, v in FIELD_MAP.items() if v == FIELD_MAP.get(field_key)][0] # Упрощено
+    field_name = FIELD_NAMES.get(field_key, field_key)
     
     await state.set_state(EditProfile.entering_value)
-    await state.update_data(edit_field=FIELD_MAP.get(field_key))
-    await callback.message.edit_text(f"Введите новое значение для параметра.\nПример: ДД.ММ.ГГГГ")
+    await state.update_data(edit_field=field_key)
+    
+    kb = [[InlineKeyboardButton(text="❌ Отмена", callback_data="back_to_profile")]]
+    keyboard = InlineKeyboardMarkup(inline_keyboard=kb)
+    
+    await callback.message.edit_text(
+        f"✏️ Введите новое значение для: <b>{field_name}</b>\n\n"
+        f"Пример формата указан выше.",
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+@router.callback_query(F.data == "back_to_profile")
+async def back_to_profile(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    # Отправляем новое сообщение с профилем
+    user = await get_user(callback.from_user.id)
+    if user and user.get('registered'):
+        text = generate_profile_text(user)
+        bans = check_flight_ban(user)
+        if bans:
+            text += "\n\n🚫 <b>ПОЛЕТЫ ЗАПРЕЩЕНЫ!</b>\n" + "\n".join(bans)
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✏️ Редактировать", callback_data="edit_start")]])
+        await callback.message.answer(text, reply_markup=kb)
+    else:
+        await callback.message.answer("Выберите действие:", reply_markup=get_main_menu())
     await callback.answer()
 
 @router.message(EditProfile.entering_value)
 async def save_edit(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    field = data.get('edit_field')
-    if field:
-        await update_user_field(message.from_user.id, field, message.text)
-        await message.answer("✅ Данные обновлены!")
+    field_key = data.get('edit_field')
+    
+    if not field_key:
+        await message.answer("❌ Ошибка: поле не выбрано. Начните редактирование заново.")
         await state.clear()
-        await show_profile(message) # Показать обновленный профиль
-
-@router.callback_query(F.data == "back_to_profile")
-async def back_prof(callback: types.CallbackQuery):
-    await callback.message.edit_text("Меню профиля", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Назад к профилю", callback_data="dummy")]]))
-    # Тут лучше просто вызвать show_profile, но edit_text может конфликтовать, если сообщение уже другое. 
-    # Для простоты отправим новое сообщение
-    await callback.message.answer("Выберите действие:", reply_markup=get_main_menu())
-    await callback.answer()
+        return
+    
+    # Special handling for vacation
+    if field_key == "vacation":
+        try:
+            parts = message.text.split('-')
+            if len(parts) != 2:
+                await message.answer("❌ Неверный формат. Используйте: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ")
+                return
+            await update_user_field(message.from_user.id, 'vacation_start', parts[0].strip())
+            await update_user_field(message.from_user.id, 'vacation_end', parts[1].strip())
+            await message.answer("✅ Даты отпуска обновлены!")
+        except Exception as e:
+            await message.answer(f"❌ Ошибка: {e}")
+    else:
+        db_field = FIELD_MAP.get(field_key)
+        if db_field:
+            await update_user_field(message.from_user.id, db_field, message.text)
+            await message.answer("✅ Данные обновлены!")
+        else:
+            await message.answer("❌ Ошибка: неизвестное поле.")
+    
+    await state.clear()
+    await show_profile(message)
 
 # --- ПОЛЕЗНАЯ ИНФОРМАЦИЯ ---
 
@@ -209,4 +250,3 @@ async def admin_search_by_name(message: types.Message):
             text = generate_profile_text(u)
             await message.answer(text)
     # else ничего не делаем, чтобы не спамить в чат обычными сообщениями
-
