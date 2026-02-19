@@ -1,3 +1,4 @@
+import os  # ✅ Добавлен импорт!
 import asyncio
 import logging
 from aiohttp import web
