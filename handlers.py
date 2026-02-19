@@ -24,19 +24,44 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
+# ========== ХРАНЕНИЕ ПОСЛЕДНИХ СООБЩЕНИЙ БОТА ==========
+# Словарь: {chat_id: message_id}
+last_bot_messages = {}
+
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
 async def delete_message_safe(message: types.Message):
-    """Безопасное удаление сообщения (без ошибок)"""
+    """Безопасное удаление сообщения"""
     try:
         await message.delete()
     except Exception as e:
         logger.debug(f"Не удалось удалить сообщение: {e}")
 
-async def cleanup_bot_message(message: types.Message):
-    """Удаляет предыдущее сообщение бота, если есть"""
-    if message.reply_to_message and message.reply_to_message.from_user.id == message.bot.id:
-        await delete_message_safe(message.reply_to_message)
+async def cleanup_last_bot_message(message: types.Message):
+    """
+    Удаляет последнее сообщение бота в чате.
+    Работает автоматически - не требует ответа на сообщение.
+    """
+    chat_id = message.chat.id
+    
+    # Если есть сохраненное ID последнего сообщения бота - удаляем
+    if chat_id in last_bot_messages:
+        try:
+            await message.bot.delete_message(chat_id, last_bot_messages[chat_id])
+        except Exception as e:
+            logger.debug(f"Не удалось удалить старое сообщение: {e}")
+        finally:
+            # Удаляем из словаря в любом случае
+            if chat_id in last_bot_messages:
+                del last_bot_messages[chat_id]
+
+async def send_and_save(message: types.Message, text: str, **kwargs):
+    """
+    Отправляет сообщение и сохраняет его ID для последующего удаления.
+    """
+    sent_message = await message.answer(text, **kwargs)
+    last_bot_messages[message.chat.id] = sent_message.message_id
+    return sent_message
 
 # ========== ПРОВЕРКА АДМИНА ==========
 
@@ -48,111 +73,112 @@ def is_admin_check(user_id):
 
 @router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
+    await cleanup_last_bot_message(message)
+    
     await add_user(message.from_user.id, message.from_user.username)
     user = await get_user(message.from_user.id)
     admin = is_admin_check(message.from_user.id)
     
-    # Очищаем предыдущие сообщения бота
-    await cleanup_bot_message(message)
-    
     if user and user.get('registered'):
-        await message.answer(
+        await send_and_save(
+            message,
             "Добро пожаловать обратно! Выберите действие:",
             reply_markup=get_main_menu(is_admin=admin)
         )
     else:
-        await message.answer(
+        await send_and_save(
+            message,
             "👋 Приветствую! Для доступа к функциям необходимо пройти регистрацию.\n\n"
             "Начнем? (Напишите /start еще раз или просто начните вводить данные)"
         )
         await state.set_state(Registration.fio)
-        await message.answer("1️⃣ Введите вашу Фамилию Имя Отчество:")
+        await send_and_save(message, "1️⃣ Введите вашу Фамилию Имя Отчество:")
 
 @router.message(Registration.fio)
 async def reg_fio(message: types.Message, state: FSMContext):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     await update_user_field(message.from_user.id, 'fio', message.text)
     await state.set_state(Registration.rank)
-    await message.answer("2️⃣ Введите воинское звание:")
+    await send_and_save(message, "2️⃣ Введите воинское звание:")
 
 @router.message(Registration.rank)
 async def reg_rank(message: types.Message, state: FSMContext):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     await update_user_field(message.from_user.id, 'rank', message.text)
     await state.set_state(Registration.qual_rank)
-    await message.answer("3️⃣ Введите квалификационный разряд:")
+    await send_and_save(message, "3️⃣ Введите квалификационный разряд:")
 
 @router.message(Registration.qual_rank)
 async def reg_qual(message: types.Message, state: FSMContext):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     await update_user_field(message.from_user.id, 'qual_rank', message.text)
     await state.set_state(Registration.vacation)
-    await message.answer("4️⃣ Введите даты крайнего отпуска (формат: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ):")
+    await send_and_save(message, "4️⃣ Введите даты крайнего отпуска (формат: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ):")
 
 @router.message(Registration.vacation)
 async def reg_vacation(message: types.Message, state: FSMContext):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     try:
         if '-' not in message.text:
-            await message.answer("❌ Неверный формат! Используйте: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ")
+            await send_and_save(message, "❌ Неверный формат! Используйте: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ")
             return
         parts = message.text.split('-')
         if len(parts) != 2:
-            await message.answer("❌ Ошибка формата! Введите две даты через дефис")
+            await send_and_save(message, "❌ Ошибка формата! Введите две даты через дефис")
             return
         await update_user_field(message.from_user.id, 'vacation_start', parts[0].strip())
         await update_user_field(message.from_user.id, 'vacation_end', parts[1].strip())
         await state.set_state(Registration.vlk)
-        await message.answer("5️⃣ Введите дату прохождения ВЛК (ДД.ММ.ГГГГ):")
+        await send_and_save(message, "5️⃣ Введите дату прохождения ВЛК (ДД.ММ.ГГГГ):")
     except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
+        await send_and_save(message, f"❌ Ошибка: {e}")
 
 @router.message(Registration.vlk)
 async def reg_vlk(message: types.Message, state: FSMContext):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     await update_user_field(message.from_user.id, 'vlk_date', message.text)
     await state.set_state(Registration.umo)
-    await message.answer("6️⃣ Введите дату прохождения УМО (ДД.ММ.ГГГГ). Если не было - напишите 'нет':")
+    await send_and_save(message, "6️⃣ Введите дату прохождения УМО (ДД.ММ.ГГГГ). Если не было - напишите 'нет':")
 
 @router.message(Registration.umo)
 async def reg_umo(message: types.Message, state: FSMContext):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     val = message.text if message.text.lower() != 'нет' else None
     await update_user_field(message.from_user.id, 'umo_date', val)
     await state.set_state(Registration.kbp_4_md_m)
-    await message.answer("7️⃣ КБП-4 Ил-76 МД-М (ДД.ММ.ГГГГ):")
+    await send_and_save(message, "7️⃣ КБП-4 Ил-76 МД-М (ДД.ММ.ГГГГ):")
 
 @router.message(Registration.kbp_4_md_m)
 async def reg_kbp4m(message: types.Message, state: FSMContext):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     await update_user_field(message.from_user.id, 'kbp_4_md_m', message.text)
     await state.set_state(Registration.kbp_7_md_m)
-    await message.answer("8️⃣ КБП-7 Ил-76 МД-М (ДД.ММ.ГГГГ):")
+    await send_and_save(message, "8️⃣ КБП-7 Ил-76 МД-М (ДД.ММ.ГГГГ):")
 
 @router.message(Registration.kbp_7_md_m)
 async def reg_kbp7m(message: types.Message, state: FSMContext):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     await update_user_field(message.from_user.id, 'kbp_7_md_m', message.text)
     await state.set_state(Registration.kbp_4_md_90a)
-    await message.answer("9️⃣ КБП-4 Ил-76 МД-90А (ДД.ММ.ГГГГ):")
+    await send_and_save(message, "9️⃣ КБП-4 Ил-76 МД-90А (ДД.ММ.ГГГГ):")
 
 @router.message(Registration.kbp_4_md_90a)
 async def reg_kbp4_90(message: types.Message, state: FSMContext):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     await update_user_field(message.from_user.id, 'kbp_4_md_90a', message.text)
     await state.set_state(Registration.kbp_7_md_90a)
-    await message.answer("🔟 КБП-7 Ил-76 МД-90А (ДД.ММ.ГГГГ):")
+    await send_and_save(message, "🔟 КБП-7 Ил-76 МД-90А (ДД.ММ.ГГГГ):")
 
 @router.message(Registration.kbp_7_md_90a)
 async def reg_kbp7_90(message: types.Message, state: FSMContext):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     await update_user_field(message.from_user.id, 'kbp_7_md_90a', message.text)
     await state.set_state(Registration.jumps)
-    await message.answer("1️⃣1️⃣ Дата выполнения прыжков с парашютом (ДД.ММ.ГГГГ):")
+    await send_and_save(message, "1️⃣1️⃣ Дата выполнения прыжков с парашютом (ДД.ММ.ГГГГ):")
 
 @router.message(Registration.jumps)
 async def reg_finish(message: types.Message, state: FSMContext):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     await update_user_field(message.from_user.id, 'jumps_date', message.text)
     await set_registered(message.from_user.id)
     await state.clear()
@@ -161,50 +187,62 @@ async def reg_finish(message: types.Message, state: FSMContext):
     admin = is_admin_check(message.from_user.id)
     if bans:
         ban_text = "\n".join(bans)
-        await message.answer(f"⚠️ ВНИМАНИЕ!\n{ban_text}", reply_markup=get_main_menu(is_admin=admin))
+        await send_and_save(
+            message,
+            f"⚠️ ВНИМАНИЕ!\n{ban_text}",
+            reply_markup=get_main_menu(is_admin=admin)
+        )
     else:
-        await message.answer("✅ Регистрация успешно завершена!", reply_markup=get_main_menu(is_admin=admin))
+        await send_and_save(
+            message,
+            "✅ Регистрация успешно завершена!",
+            reply_markup=get_main_menu(is_admin=admin)
+        )
 
 # ========== ГЛАВНОЕ МЕНЮ ==========
 
 @router.message(F.text == "👤 Мой профиль")
 async def show_profile(message: types.Message):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     user = await get_user(message.from_user.id)
     if not user or not user.get('registered'):
-        await message.answer("Сначала пройдите регистрацию (/start)")
+        await send_and_save(message, "Сначала пройдите регистрацию (/start)")
         return
     text = generate_profile_text(user)
     bans = check_flight_ban(user)
     if bans:
         text += "\n\n🚫 <b>ПОЛЕТЫ ЗАПРЕЩЕНЫ!</b>\n" + "\n".join(bans)
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✏️ Редактировать", callback_data="edit_start")]])
-    await message.answer(text, reply_markup=kb)
+    await send_and_save(message, text, reply_markup=kb)
 
 @router.message(F.text == "📚 Полезная информация")
 async def start_search(message: types.Message, state: FSMContext):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     await state.set_state(SearchInfo.waiting_query)
-    await message.answer("🔍 Напишите город или аэродром, информация по которому вас интересует:")
+    await send_and_save(message, "🔍 Напишите город или аэродром, информация по которому вас интересует:")
 
 @router.message(SearchInfo.waiting_query)
 async def process_search(message: types.Message, state: FSMContext):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     results = await search_info(message.text)
     if results:
         for res in results:
-            await message.answer(res)
+            await message.answer(res)  # Результаты поиска не удаляем
     else:
-        await message.answer("❌ Информация не найдена, извините.")
+        await send_and_save(message, "❌ Информация не найдена, извините.")
     await state.clear()
 
 @router.message(F.text == "🛡 Функции админа")
 async def admin_menu_button(message: types.Message):
+    await cleanup_last_bot_message(message)
     if not is_admin_check(message.from_user.id):
-        await message.answer("❌ Доступ запрещен.")
+        await send_and_save(message, "❌ Доступ запрещен.")
         return
-    await cleanup_bot_message(message)
-    await message.answer("🛡 <b>Панель администратора</b>\n\nВыберите действие:", reply_markup=get_admin_menu())
+    await send_and_save(
+        message,
+        "🛡 <b>Панель администратора</b>\n\nВыберите действие:",
+        reply_markup=get_admin_menu()
+    )
 
 # ========== РЕДАКТИРОВАНИЕ ==========
 
@@ -220,7 +258,10 @@ async def choose_field_edit(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(EditProfile.entering_value)
     await state.update_data(edit_field=field_key)
     kb = [[InlineKeyboardButton(text="❌ Отмена", callback_data="back_to_profile")]]
-    await callback.message.edit_text(f"✏️ Введите значение для: <b>{field_name}</b>", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    await callback.message.edit_text(
+        f"✏️ Введите значение для: <b>{field_name}</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
+    )
     await callback.answer()
 
 @router.callback_query(F.data == "back_to_profile")
@@ -235,11 +276,11 @@ async def back_to_profile(callback: types.CallbackQuery, state: FSMContext):
 
 @router.message(EditProfile.entering_value)
 async def save_edit(message: types.Message, state: FSMContext):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     data = await state.get_data()
     field_key = data.get('edit_field')
     if not field_key:
-        await message.answer("❌ Ошибка")
+        await send_and_save(message, "❌ Ошибка")
         await state.clear()
         return
     if field_key == "vacation":
@@ -247,12 +288,12 @@ async def save_edit(message: types.Message, state: FSMContext):
         if len(parts) == 2:
             await update_user_field(message.from_user.id, 'vacation_start', parts[0].strip())
             await update_user_field(message.from_user.id, 'vacation_end', parts[1].strip())
-            await message.answer("✅ Обновлено!")
+            await send_and_save(message, "✅ Обновлено!")
     else:
         db_field = FIELD_MAP.get(field_key)
         if db_field:
             await update_user_field(message.from_user.id, db_field, message.text)
-            await message.answer("✅ Обновлено!")
+            await send_and_save(message, "✅ Обновлено!")
     await state.clear()
     await show_profile(message)
 
@@ -355,49 +396,52 @@ async def admin_back_callback(callback: types.CallbackQuery):
 
 @router.message(AdminStates.adding_admin)
 async def admin_add_process(message: types.Message):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     if not is_admin_check(message.from_user.id):
         return
     try:
         target_id = int(message.text.strip())
         success, msg = await add_admin(target_id, message.from_user.id)
-        await message.answer(msg)
+        await send_and_save(message, msg)
     except:
-        await message.answer("❌ Ошибка формата")
+        await send_and_save(message, "❌ Ошибка формата")
 
 @router.message(AdminStates.removing_admin)
 async def admin_remove_process(message: types.Message):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     if not is_admin_check(message.from_user.id):
         return
     try:
         target_id = int(message.text.strip())
         success, msg = await remove_admin(target_id, message.from_user.id)
-        await message.answer(msg)
+        await send_and_save(message, msg)
     except:
-        await message.answer("❌ Ошибка")
+        await send_and_save(message, "❌ Ошибка")
 
 @router.message(Command("list"))
 async def admin_list_cmd(message: types.Message):
+    await cleanup_last_bot_message(message)
     if not is_admin_check(message.from_user.id):
         return
     users = await get_all_users()
     output = "📋 <b>Список:</b>\n\n"
     for u in users:
         output += f"👤 {u['fio']} ({u['rank']})\n"
-    await message.answer(output[:4000])
+    await send_and_save(message, output[:4000])
 
 @router.message(Command("admin_menu"))
 async def admin_menu_cmd(message: types.Message):
+    await cleanup_last_bot_message(message)
     if not is_admin_check(message.from_user.id):
         return
-    await message.answer("🛡 <b>Панель админа</b>", reply_markup=get_admin_menu())
+    await send_and_save(message, "🛡 <b>Панель админа</b>", reply_markup=get_admin_menu())
 
 @router.message(Command("fill_airports"))
 async def admin_fill_airports_cmd(message: types.Message):
+    await cleanup_last_bot_message(message)
     if not is_admin_check(message.from_user.id):
         return
-    await message.answer("⏳ Заполняю...")
+    await send_and_save(message, "⏳ Заполняю...")
     count = 0
     for keyword, content in AIRPORTS:
         try:
@@ -405,16 +449,22 @@ async def admin_fill_airports_cmd(message: types.Message):
             count += 1
         except:
             pass
-    await message.answer(f"✅ Заполнено: {count} аэродромов")
+    await send_and_save(message, f"✅ Заполнено: {count} аэродромов")
 
 @router.message(Command("cancel"))
 async def cmd_cancel(message: types.Message, state: FSMContext):
-    await cleanup_bot_message(message)
+    await cleanup_last_bot_message(message)
     await state.clear()
-    await message.answer("❌ Отменено", reply_markup=get_main_menu(is_admin=is_admin_check(message.from_user.id)))
+    admin = is_admin_check(message.from_user.id)
+    await send_and_save(
+        message,
+        "❌ Отменено",
+        reply_markup=get_main_menu(is_admin=admin)
+    )
 
 @router.message(Command("help"))
 async def cmd_help(message: types.Message):
+    await cleanup_last_bot_message(message)
     text = "ℹ️ <b>Помощь:</b>\n\n"
     text += "/start - Начать\n"
     text += "/help - Помощь\n"
@@ -424,4 +474,4 @@ async def cmd_help(message: types.Message):
         text += "/list - Список\n"
         text += "/admin_menu - Меню\n"
         text += "/fill_airports - База"
-    await message.answer(text)
+    await send_and_save(message, text)
