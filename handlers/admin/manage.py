@@ -5,7 +5,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from states import AdminStates
 from database import add_admin, remove_admin, get_all_admins
 from keyboards import get_admin_menu, get_admin_manage_menu
-from .common import cleanup_last_bot_message, send_and_save, is_admin_check
+from ..common import cleanup_last_bot_message, send_and_save, is_admin_check  # ✅ ..common
 
 router = Router()
 
