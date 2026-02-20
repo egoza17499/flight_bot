@@ -59,7 +59,6 @@ def is_duplicate_result(chat_id: int, query: str, result_text: str) -> bool:
     """Проверяет является ли результат дубликатом"""
     if chat_id in last_sent_results:
         last_query, last_result = last_sent_results[chat_id]
-        # Если тот же запрос и тот же результат - это дубликат
         if query.lower() == last_query.lower() and result_text == last_result:
             return True
     return False
@@ -68,17 +67,37 @@ def save_search_result(chat_id: int, query: str, result_text: str):
     """Сохраняет последний результат поиска"""
     last_sent_results[chat_id] = (query, result_text)
 
-def get_quick_menu():
-    """Возвращает меню быстрых кнопок для мобильной версии"""
-    kb = [
-        [KeyboardButton(text="👤 Мой профиль"), KeyboardButton(text="📚 Полезная информация")],
-        [KeyboardButton(text="🛡 Функции админа", callback_data="admin_menu") if True else KeyboardButton(text="📊 Статистика")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
-
 def is_admin_check(user_id):
     """Проверяет является ли пользователь админом"""
     return user_id == ADMIN_ID
+
+# ========== ОБРАБОТКА ВСЕХ ТЕКСТОВЫХ СООБЩЕНИЙ ==========
+
+@router.message(F.text)
+async def handle_any_text(message: types.Message, state: FSMContext):
+    """Любое текстовое сообщение считается командой /start"""
+    # Сбрасываем все состояния
+    await state.clear()
+    
+    # Очищаем последнее сообщение бота
+    await cleanup_last_bot_message(message)
+    
+    user = await get_user(message.from_user.id)
+    admin = is_admin_check(message.from_user.id)
+    
+    if user and user.get('registered'):
+        await send_and_save(
+            message,
+            "Добро пожаловать обратно! Выберите действие:",
+            reply_markup=get_main_menu(is_admin=admin)
+        )
+    else:
+        await send_and_save(
+            message,
+            "👋 Приветствую! Для доступа к функциям необходимо пройти регистрацию.\n\n"
+            "Начнем? (Напишите /start или нажмите кнопку ниже)",
+            reply_markup=get_main_menu(is_admin=admin)
+        )
 
 # ========== СТАРТ И РЕГИСТРАЦИЯ ==========
 
@@ -277,18 +296,15 @@ async def process_search(message: types.Message, state: FSMContext):
             
             header += "<b>Полезные номера:</b>\n"
             
-            # Отправляем с шапкой
+            # Отправляем с шапкой (БЕЗ кнопки повторного поиска!)
             full_text = header + result_text
-            
-            # Добавляем кнопки для быстрого поиска
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔄 Повторить поиск", callback_data=f"search_{query}")],
-                [InlineKeyboardButton(text="📚 Ещё поиск", callback_data="new_search")]
-            ])
-            
-            await message.answer(full_text, reply_markup=kb)
+            await message.answer(full_text)
     else:
-        await send_and_save(message, "❌ Информация не найдена, извините.")
+        # Если не найдено - показываем кнопку повторного поиска
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Попробовать другой поиск", callback_data="new_search")]
+        ])
+        await send_and_save(message, "❌ Информация не найдена, извините.", reply_markup=kb)
     
     await state.clear()
 
@@ -296,10 +312,8 @@ def extract_airport_info(query: str, result_text: str) -> str:
     """Извлекает информацию о городе и аэродроме из результата"""
     info = ""
     
-    # Простая эвристика для определения города и аэропорта
     query_lower = query.lower()
     
-    # Словарь соответствий
     airports_map = {
         "стригино": ("Нижний Новгород", "Аэропорт Стригино"),
         "чкаловский": ("Москва", "Аэродром Чкаловский"),
@@ -328,20 +342,6 @@ async def new_search_callback(callback: types.CallbackQuery):
             resize_keyboard=True
         )
     )
-    await callback.answer()
-
-@router.callback_query(F.data.startswith("search_"))
-async def repeat_search_callback(callback: types.CallbackQuery):
-    query = callback.data.replace("search_", "")
-    results = await search_info(query)
-    if results:
-        for result_text in results:
-            header = f"🔍 <b>Результаты по запросу: {query}</b>\n\n"
-            airport_info = extract_airport_info(query, result_text)
-            if airport_info:
-                header += airport_info + "\n\n"
-            header += "<b>Полезные номера:</b>\n"
-            await callback.message.answer(header + result_text)
     await callback.answer()
 
 @router.message(F.text == "🛡 Функции админа")
@@ -415,11 +415,26 @@ async def save_edit(message: types.Message, state: FSMContext):
 async def admin_list_callback(callback: types.CallbackQuery):
     if not is_admin_check(callback.from_user.id):
         return
+    
     users = await get_all_users()
-    output = "📋 <b>Список:</b>\n\n"
-    for u in users:
-        output += f"👤 {u['fio']} ({u['rank']})\n"
-    await callback.message.answer(output[:4000])
+    if not users:
+        await callback.message.answer("📋 Список пуст.")
+        await callback.answer()
+        return
+    
+    output = "📋 <b>Список личного состава:</b>\n\n"
+    for i, u in enumerate(users, 1):
+        output += f"{i}. 👤 {u['fio']}\n"
+        output += f"   Звание: {u['rank']}\n"
+        if u.get('qual_rank'):
+            output += f"   Квалификация: {u['qual_rank']}\n"
+        output += "\n"
+    
+    # Разбиваем на сообщения если больше 4000 символов
+    chunks = [output[i:i+4000] for i in range(0, len(output), 4000)]
+    for chunk in chunks:
+        await callback.message.answer(chunk)
+    
     await callback.answer()
 
 @router.callback_query(F.data == "admin_stats")
@@ -555,10 +570,17 @@ async def admin_list_cmd(message: types.Message):
     if not is_admin_check(message.from_user.id):
         return
     users = await get_all_users()
-    output = "📋 <b>Список:</b>\n\n"
-    for u in users:
-        output += f"👤 {u['fio']} ({u['rank']})\n"
-    await send_and_save(message, output[:4000])
+    output = "📋 <b>Список личного состава:</b>\n\n"
+    for i, u in enumerate(users, 1):
+        output += f"{i}. 👤 {u['fio']}\n"
+        output += f"   Звание: {u['rank']}\n"
+        if u.get('qual_rank'):
+            output += f"   Квалификация: {u['qual_rank']}\n"
+        output += "\n"
+    
+    chunks = [output[i:i+4000] for i in range(0, len(output), 4000)]
+    for chunk in chunks:
+        await message.answer(chunk)
 
 @router.message(Command("admin_menu"))
 async def admin_menu_cmd(message: types.Message):
