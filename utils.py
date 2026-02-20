@@ -9,6 +9,29 @@ def parse_date(date_str):
     except (ValueError, TypeError):
         return None
 
+def check_status(date_value):
+    """
+    Проверяет статус даты (для планировщика).
+    Returns: 'expired' (просрочено), 'warning' (скоро), 'ok' (действует)
+    """
+    if not date_value:
+        return 'no_data'
+    
+    if isinstance(date_value, str):
+        date_value = parse_date(date_value)
+        if not date_value:
+            return 'no_data'
+    
+    today = date.today()
+    days = (date_value - today).days
+    
+    if days < 0:
+        return 'expired'
+    elif days <= 30:
+        return 'warning'
+    else:
+        return 'ok'
+
 def get_status_color(days_remaining):
     """
     Определяет статус и цвет по количеству дней.
@@ -26,12 +49,10 @@ def get_status_color(days_remaining):
 def generate_profile_text(user):
     """
     Генерирует текст профиля с цветовой индикацией сроков.
-    Формат как в ТЗ.
     """
     if not user:
         return "❌ Пользователь не найден"
     
-    # Основная информация
     fio = user.get('fio', 'Нет данных') or 'Нет данных'
     rank = user.get('rank', 'Нет') or 'Нет'
     qual_rank = user.get('qual_rank', 'Нет') or 'Нет'
@@ -40,7 +61,6 @@ def generate_profile_text(user):
     text += f"🎖 Звание: {rank}\n"
     text += f"🏅 Квалификация: {qual_rank}\n"
     
-    # Даты с проверкой сроков
     today = date.today()
     
     # Отпуск (конец)
@@ -126,30 +146,25 @@ def generate_profile_text(user):
 def check_flight_ban(user):
     """
     Проверяет запреты на полеты.
-    Returns: список причин запрета
     """
     bans = []
     today = date.today()
     
-    # ВЛК
     vlk_date = parse_date(user.get('vlk_date'))
     if vlk_date and vlk_date < today:
         days = (today - vlk_date).days
         bans.append(f"🔴 ВЛК просрочена на {days} дн.")
     
-    # КБП-4 (Ил-76 МД-М)
     kbp_4_md_m = parse_date(user.get('kbp_4_md_m'))
     if kbp_4_md_m and kbp_4_md_m < today:
         days = (today - kbp_4_md_m).days
         bans.append(f"🔴 КБП-4 (МД-М) просрочен на {days} дн.")
     
-    # КБП-4 (Ил-76 МД-90А)
     kbp_4_md_90a = parse_date(user.get('kbp_4_md_90a'))
     if kbp_4_md_90a and kbp_4_md_90a < today:
         days = (today - kbp_4_md_90a).days
         bans.append(f"🔴 КБП-4 (МД-90А) просрочен на {days} дн.")
     
-    # Прыжки с ПДС
     jumps_date_str = user.get('jumps_date')
     if jumps_date_str and jumps_date_str.lower() not in ['освобожден', 'осв', 'нет']:
         jumps_date = parse_date(jumps_date_str)
@@ -162,12 +177,10 @@ def check_flight_ban(user):
 def get_user_status_with_colors(user):
     """
     Возвращает краткий статус пользователя с цветами.
-    Для использования в списке личного состава.
     """
     today = date.today()
     status_parts = []
     
-    # ВЛК
     vlk_date = parse_date(user.get('vlk_date'))
     if vlk_date:
         days = (vlk_date - today).days
@@ -178,7 +191,6 @@ def get_user_status_with_colors(user):
         else:
             status_parts.append("🟢 ВЛК")
     
-    # КБП-4 МД-М
     kbp_4_md_m = parse_date(user.get('kbp_4_md_m'))
     if kbp_4_md_m:
         days = (kbp_4_md_m - today).days
@@ -189,7 +201,6 @@ def get_user_status_with_colors(user):
         else:
             status_parts.append("🟢 КБП-4")
     
-    # Прыжки
     jumps_date_str = user.get('jumps_date')
     if jumps_date_str and jumps_date_str.lower() not in ['освобожден', 'осв', 'нет']:
         jumps_date = parse_date(jumps_date_str)
