@@ -1,6 +1,7 @@
 from aiogram import Router, F, types
 from database import get_all_users
-from ..common import is_admin_check  # ✅ Две точки для подъема на уровень выше
+from utils import check_flight_ban
+from .common import is_admin_check
 
 router = Router()
 
@@ -10,5 +11,11 @@ async def admin_stats_callback(callback: types.CallbackQuery):
         return
     users = await get_all_users()
     total = len(users)
-    await callback.message.answer(f"📊 <b>Статистика:</b>\n\nВсего: {total}")
+    banned = sum(1 for u in users if check_flight_ban(u))
+    await callback.message.answer(
+        f"📊 <b>Статистика:</b>\n\n"
+        f"👥 Всего: {total}\n"
+        f"✅ Готовы: {total - banned}\n"
+        f"🚫 Запреты: {banned}"
+    )
     await callback.answer()
