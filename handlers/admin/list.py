@@ -1,7 +1,7 @@
 from aiogram import Router, F, types
 from aiogram.filters import Command
 from database import get_all_users
-from .common import cleanup_last_bot_message, send_and_save, is_admin_check
+from ..common import cleanup_last_bot_message, send_and_save, is_admin_check  # ✅ ..common вместо .common
 
 router = Router()
 
