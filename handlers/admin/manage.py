@@ -3,7 +3,7 @@ from aiogram.fsm.context import FSMContext
 from database import add_admin, remove_admin, get_all_admins
 from states import AdminStates
 from keyboards import get_admin_manage_menu, get_admin_menu, get_main_menu
-from .common import cleanup_last_bot_message, send_and_save, is_admin_check
+from ..common import cleanup_last_bot_message, send_and_save, is_admin_check  # ✅ Изменили импорт
 
 router = Router()
 
