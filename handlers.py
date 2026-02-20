@@ -24,8 +24,9 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
-# ========== ХРАНЕНИЕ ПОСЛЕДНИХ СООБЩЕНИЙ БОТА ==========
+# ========== ХРАНЕНИЕ ПОСЛЕДНИХ СООБЩЕНИЙ ==========
 last_bot_messages = {}
+last_sent_results = {}  # Для проверки дубликатов {chat_id: (query, result_text)}
 
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
@@ -54,7 +55,26 @@ async def send_and_save(message: types.Message, text: str, **kwargs):
     last_bot_messages[message.chat.id] = sent_message.message_id
     return sent_message
 
-# ========== ПРОВЕРКА АДМИНА ==========
+def is_duplicate_result(chat_id: int, query: str, result_text: str) -> bool:
+    """Проверяет является ли результат дубликатом"""
+    if chat_id in last_sent_results:
+        last_query, last_result = last_sent_results[chat_id]
+        # Если тот же запрос и тот же результат - это дубликат
+        if query.lower() == last_query.lower() and result_text == last_result:
+            return True
+    return False
+
+def save_search_result(chat_id: int, query: str, result_text: str):
+    """Сохраняет последний результат поиска"""
+    last_sent_results[chat_id] = (query, result_text)
+
+def get_quick_menu():
+    """Возвращает меню быстрых кнопок для мобильной версии"""
+    kb = [
+        [KeyboardButton(text="👤 Мой профиль"), KeyboardButton(text="📚 Полезная информация")],
+        [KeyboardButton(text="🛡 Функции админа", callback_data="admin_menu") if True else KeyboardButton(text="📊 Статистика")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 def is_admin_check(user_id):
     """Проверяет является ли пользователь админом"""
@@ -209,18 +229,120 @@ async def show_profile(message: types.Message):
 async def start_search(message: types.Message, state: FSMContext):
     await cleanup_last_bot_message(message)
     await state.set_state(SearchInfo.waiting_query)
-    await send_and_save(message, "🔍 Напишите город или аэродром, информация по которому вас интересует:")
+    # Добавляем быстрые кнопки для мобильных
+    quick_kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🔍 Чкаловский"), KeyboardButton(text="🔍 Стригино")],
+            [KeyboardButton(text="🔍 Москва"), KeyboardButton(text="🔍 Санкт-Петербург")],
+            [KeyboardButton(text="❌ Отмена")]
+        ],
+        resize_keyboard=True
+    )
+    await send_and_save(
+        message, 
+        "🔍 Напишите город или аэродром, информация по которому вас интересует:",
+        reply_markup=quick_kb
+    )
 
 @router.message(SearchInfo.waiting_query)
 async def process_search(message: types.Message, state: FSMContext):
     await cleanup_last_bot_message(message)
-    results = await search_info(message.text)
+    query = message.text.strip()
+    
+    # Проверяем на отмену
+    if query.lower() == "отмена" or query == "❌ Отмена":
+        await state.clear()
+        await send_and_save(message, "❌ Поиск отменен", reply_markup=get_main_menu(is_admin=is_admin_check(message.from_user.id)))
+        return
+    
+    results = await search_info(query)
+    
     if results:
-        for res in results:
-            await message.answer(res)
+        for result_text in results:
+            # Проверяем на дубликат
+            if is_duplicate_result(message.chat.id, query, result_text):
+                logger.info(f"⏭ Пропущен дубликат для '{query}'")
+                continue
+            
+            # Сохраняем результат
+            save_search_result(message.chat.id, query, result_text)
+            
+            # Формируем шапку с информацией о запросе
+            header = f"🔍 <b>Вот что смог найти по запросу: {query}</b>\n\n"
+            
+            # Пытаемся извлечь информацию об аэродроме для шапки
+            airport_info = extract_airport_info(query, result_text)
+            if airport_info:
+                header += airport_info + "\n\n"
+            
+            header += "<b>Полезные номера:</b>\n"
+            
+            # Отправляем с шапкой
+            full_text = header + result_text
+            
+            # Добавляем кнопки для быстрого поиска
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Повторить поиск", callback_data=f"search_{query}")],
+                [InlineKeyboardButton(text="📚 Ещё поиск", callback_data="new_search")]
+            ])
+            
+            await message.answer(full_text, reply_markup=kb)
     else:
         await send_and_save(message, "❌ Информация не найдена, извините.")
+    
     await state.clear()
+
+def extract_airport_info(query: str, result_text: str) -> str:
+    """Извлекает информацию о городе и аэродроме из результата"""
+    info = ""
+    
+    # Простая эвристика для определения города и аэропорта
+    query_lower = query.lower()
+    
+    # Словарь соответствий
+    airports_map = {
+        "стригино": ("Нижний Новгород", "Аэропорт Стригино"),
+        "чкаловский": ("Москва", "Аэродром Чкаловский"),
+        "пулково": ("Санкт-Петербург", "Аэропорт Пулково"),
+        "внуково": ("Москва", "Аэропорт Внуково"),
+        "кольцово": ("Екатеринбург", "Аэропорт Кольцово"),
+    }
+    
+    for key, (city, airport) in airports_map.items():
+        if key in query_lower:
+            info += f"🏙 <b>Город:</b> {city}\n"
+            info += f"✈️ <b>Аэродром:</b> {airport}"
+            break
+    
+    return info
+
+@router.callback_query(F.data == "new_search")
+async def new_search_callback(callback: types.CallbackQuery):
+    await callback.message.answer(
+        "🔍 Введите новый запрос:",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="🔍 Чкаловский"), KeyboardButton(text="🔍 Стригино")],
+                [KeyboardButton(text="❌ Отмена")]
+            ],
+            resize_keyboard=True
+        )
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("search_"))
+async def repeat_search_callback(callback: types.CallbackQuery):
+    query = callback.data.replace("search_", "")
+    results = await search_info(query)
+    if results:
+        for result_text in results:
+            header = f"🔍 <b>Результаты по запросу: {query}</b>\n\n"
+            airport_info = extract_airport_info(query, result_text)
+            if airport_info:
+                header += airport_info + "\n\n"
+            header += "<b>Полезные номера:</b>\n"
+            await callback.message.answer(header + result_text)
+    await callback.answer()
 
 @router.message(F.text == "🛡 Функции админа")
 async def admin_menu_button(message: types.Message):
@@ -314,7 +436,6 @@ async def admin_fill_airports_callback(callback: types.CallbackQuery):
     if not is_admin_check(callback.from_user.id):
         return
     
-    # Шаг 1: Проверяем что AIRPORTS загрузился
     try:
         airport_count = len(AIRPORTS)
         logger.info(f"🛫 AIRPORTS загружен: {airport_count} записей")
@@ -329,7 +450,6 @@ async def admin_fill_airports_callback(callback: types.CallbackQuery):
     
     await callback.answer()
     
-    # Шаг 2: Заполняем с логированием
     success_count = 0
     error_count = 0
     
@@ -338,18 +458,15 @@ async def admin_fill_airports_callback(callback: types.CallbackQuery):
             await add_info(keyword, content)
             success_count += 1
             
-            # Логируем каждые 25 аэродромов
             if i % 25 == 0:
                 logger.info(f"✅ Прогресс: {i}/{airport_count}")
             
-            # Небольшая пауза чтобы не блокировать
             await asyncio.sleep(0.03)
             
         except Exception as e:
             error_count += 1
             logger.error(f"❌ Ошибка {keyword}: {e}")
     
-    # Шаг 3: Финальный отчет
     logger.info(f"✅ ЗАВЕРШЕНО! Успешно: {success_count}, Ошибок: {error_count}")
     
     await callback.message.answer(
