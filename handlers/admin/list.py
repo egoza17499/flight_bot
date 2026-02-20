@@ -1,8 +1,9 @@
 from aiogram import Router, F, types
+from aiogram.filters import Command  # ✅ Добавлен импорт!
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from database import get_all_users
 from utils import get_user_status_with_colors
-from ..common import is_admin_check, cleanup_last_bot_message, send_and_save  # ✅ Изменили импорт
+from ..common import is_admin_check, cleanup_last_bot_message, send_and_save
 
 router = Router()
 
