@@ -2,12 +2,11 @@ import asyncio
 import logging
 from aiogram import Router, F, types
 from aiogram.filters import Command
-from database import add_info, get_all_users
 from airports_data import AIRPORTS
-from ..common import is_admin_check, cleanup_last_bot_message, send_and_save  # ✅ Исправлен импорт
+from database import add_info
+from .common import cleanup_last_bot_message, send_and_save, is_admin_check
 
 logger = logging.getLogger(__name__)
-
 router = Router()
 
 @router.callback_query(F.data == "admin_fill_airports")
@@ -36,12 +35,9 @@ async def admin_fill_airports_callback(callback: types.CallbackQuery):
         try:
             await add_info(keyword, content)
             success_count += 1
-            
             if i % 25 == 0:
                 logger.info(f"✅ Прогресс: {i}/{airport_count}")
-            
             await asyncio.sleep(0.03)
-            
         except Exception as e:
             error_count += 1
             logger.error(f"❌ Ошибка {keyword}: {e}")
@@ -52,8 +48,7 @@ async def admin_fill_airports_callback(callback: types.CallbackQuery):
         f"✅ <b>Заполнение завершено!</b>\n\n"
         f"📊 <b>Статистика:</b>\n"
         f"✅ Успешно: {success_count}\n"
-        f"❌ Ошибок: {error_count}\n\n"
-        f"Теперь можно искать аэродромы через '📚 Полезная информация'"
+        f"❌ Ошибок: {error_count}"
     )
 
 @router.message(Command("fill_airports"))
