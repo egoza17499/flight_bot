@@ -7,6 +7,25 @@ def parse_date(date_str):
     except:
         return None
 
+def check_status(date_str):
+    """Проверка статуса даты (просрочено/скоро истечет/нормально)"""
+    if not date_str or date_str.lower() in ['нет', 'не пройдено', 'б/к', '']:
+        return "expired", "Не пройдено"
+    
+    try:
+        deadline = datetime.strptime(date_str, "%d.%m.%Y")
+        now = datetime.now()
+        delta = deadline - now
+        
+        if delta.days < 0:
+            return "expired", f"Просрочено ({abs(delta.days)} дн. назад)"
+        elif delta.days < 30:
+            return "warning", f"Осталось {delta.days} дн."
+        else:
+            return "ok", f"Действует ({delta.days} дн.)"
+    except:
+        return "unknown", "Неизвестно"
+
 def generate_profile_text(user):
     """Генерация текста профиля пользователя"""
     text = f"👤 <b>{user.get('fio', 'Не указано')}</b>\n\n"
