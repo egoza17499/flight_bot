@@ -1,5 +1,5 @@
 from aiogram import Router, F, types
-from aiogram.filters import Command  # ✅ Добавлен импорт!
+from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from database import get_all_users
 from utils import get_user_status_with_colors
@@ -10,58 +10,76 @@ router = Router()
 @router.callback_query(F.data == "admin_list")
 async def admin_list_callback(callback: types.CallbackQuery):
     if not is_admin_check(callback.from_user.id):
+        await callback.answer("❌ Доступ запрещен", show_alert=True)
         return
     
-    users = await get_all_users()
-    if not users:
-        await callback.message.answer("📋 Список пуст.")
-        await callback.answer()
-        return
-    
-    output = "📋 <b>Список личного состава:</b>\n\n"
-    
-    for i, u in enumerate(users, 1):
-        user_id = u['user_id']
-        fio = u['fio']
-        rank = u['rank']
-        status_text = get_user_status_with_colors(u)
+    try:
+        users = await get_all_users()
+        if not users:
+            await callback.message.answer("📋 Список пуст.")
+            await callback.answer()
+            return
         
-        output += f"{i}. 👤 {fio}\n"
-        output += f"   Звание: {rank}\n"
-        if u.get('qual_rank'):
-            output += f"   Квалификация: {u['qual_rank']}\n"
-        output += f"   {status_text}\n"
-        output += f"   /user{user_id}\n\n"
-    
-    chunks = [output[i:i+4000] for i in range(0, len(output), 4000)]
-    for chunk in chunks:
-        await callback.message.answer(chunk)
-    
-    await callback.answer()
+        output = "📋 <b>Список личного состава:</b>\n\n"
+        
+        for i, u in enumerate(users, 1):
+            user_id = u['user_id']
+            fio = u['fio']
+            rank = u['rank']
+            status_text = get_user_status_with_colors(u)
+            
+            output += f"{i}. 👤 {fio}\n"
+            output += f"   Звание: {rank}\n"
+            if u.get('qual_rank'):
+                output += f"   Квалификация: {u['qual_rank']}\n"
+            output += f"   {status_text}\n"
+            output += f"   /user{user_id}\n\n"
+        
+        # Разбиваем на сообщения если больше 4000 символов
+        chunks = [output[i:i+4000] for i in range(0, len(output), 4000)]
+        for chunk in chunks:
+            await callback.message.answer(chunk)
+        
+        await callback.answer()
+        
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Ошибка показа списка: {e}")
+        await callback.message.answer("❌ Ошибка при загрузке списка")
+        await callback.answer()
 
 @router.message(Command("list"))
 async def admin_list_cmd(message: types.Message):
     await cleanup_last_bot_message(message)
     if not is_admin_check(message.from_user.id):
         return
-    users = await get_all_users()
-    output = "📋 <b>Список личного состава:</b>\n\n"
-    for i, u in enumerate(users, 1):
-        user_id = u['user_id']
-        fio = u['fio']
-        rank = u['rank']
-        status_text = get_user_status_with_colors(u)
-        
-        output += f"{i}. 👤 {fio}\n"
-        output += f"   Звание: {rank}\n"
-        if u.get('qual_rank'):
-            output += f"   Квалификация: {u['qual_rank']}\n"
-        output += f"   {status_text}\n"
-        output += f"   /user{user_id}\n\n"
     
-    chunks = [output[i:i+4000] for i in range(0, len(output), 4000)]
-    for chunk in chunks:
-        await message.answer(chunk)
+    try:
+        users = await get_all_users()
+        output = "📋 <b>Список личного состава:</b>\n\n"
+        for i, u in enumerate(users, 1):
+            user_id = u['user_id']
+            fio = u['fio']
+            rank = u['rank']
+            status_text = get_user_status_with_colors(u)
+            
+            output += f"{i}. 👤 {fio}\n"
+            output += f"   Звание: {rank}\n"
+            if u.get('qual_rank'):
+                output += f"   Квалификация: {u['qual_rank']}\n"
+            output += f"   {status_text}\n"
+            output += f"   /user{user_id}\n\n"
+        
+        chunks = [output[i:i+4000] for i in range(0, len(output), 4000)]
+        for chunk in chunks:
+            await message.answer(chunk)
+            
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Ошибка показа списка: {e}")
+        await send_and_save(message, "❌ Ошибка при загрузке списка")
 
 @router.message(F.text.startswith("/user"))
 async def show_user_full_profile(message: types.Message):
