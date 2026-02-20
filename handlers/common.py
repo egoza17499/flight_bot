@@ -1,6 +1,7 @@
 import logging
 from aiogram import types
 from config import ADMIN_ID
+from utils import get_persistent_menu  # ✅ Импортируем из utils
 
 logger = logging.getLogger(__name__)
 
