@@ -123,41 +123,150 @@ def check_deadline_status(date_str, field_name=""):
         return "green", "OK"
 
 def get_user_status_with_colors(user):
-    """Формирует текст статуса пользователя с цветовой индикацией"""
-    bans = check_flight_ban(user)
+    """Формирует текст статуса пользователя с цветовой индикацией (как на скриншоте 2)"""
+    status_parts = []
     
-    if bans:
-        status_text = "🔴 <b>НАРУШЕНИЯ:</b>\n"
-        for ban in bans:
-            status_text += f"  • {ban}\n"
-        return status_text
+    # Проверка отпуска
+    vacation_end = user.get('vacation_end')
+    if vacation_end and vacation_end.lower() not in ['нет', 'не указано', '']:
+        try:
+            vacation_date = datetime.strptime(vacation_end, "%d.%m.%Y")
+            now = datetime.now()
+            delta = vacation_date - now
+            
+            if delta.days < 0:
+                status_parts.append(f"🔴 Отпуск (конец): {vacation_end} (Просрочен на {abs(delta.days)} дн.)")
+            elif delta.days < 30:
+                status_parts.append(f"🟡 Отпуск (конец): {vacation_end} (Осталось {delta.days} дн.)")
+            else:
+                status_parts.append(f"🟢 Отпуск (конец): {vacation_end} (Действует (осталось {delta.days} дн.))")
+        except:
+            pass
+    
+    # Проверка ВЛК
+    vlk = user.get('vlk_date')
+    if vlk and vlk.lower() not in ['нет', 'не пройдено', '']:
+        try:
+            vlk_date = datetime.strptime(vlk, "%d.%m.%Y")
+            now = datetime.now()
+            delta = vlk_date - now
+            
+            if delta.days < 0:
+                status_parts.append(f"🔴 ВЛК: {vlk} (Просрочена на {abs(delta.days)} дн.)")
+            elif delta.days < 30:
+                status_parts.append(f"🟡 ВЛК: {vlk} (Осталось {delta.days} дн.)")
+            else:
+                status_parts.append(f"🟢 ВЛК: {vlk} (Действует (осталось {delta.days} дн.))")
+        except:
+            pass
+    
+    # Проверка УМО
+    umo = user.get('umo_date')
+    if umo and umo.lower() not in ['нет', 'не пройдено', '']:
+        try:
+            umo_date = datetime.strptime(umo, "%d.%m.%Y")
+            now = datetime.now()
+            delta = umo_date - now
+            
+            if delta.days < 0:
+                status_parts.append(f"🔴 УМО: {umo} (Просрочено на {abs(delta.days)} дн.)")
+            elif delta.days < 30:
+                status_parts.append(f"🟡 УМО: {umo} (Осталось {delta.days} дн.)")
+            else:
+                status_parts.append(f"🟢 УМО: {umo} (Действует (осталось {delta.days} дн.))")
+        except:
+            pass
+    
+    # Проверка КБП-4 МД-М
+    kbp_4_md_m = user.get('kbp_4_md_m')
+    if kbp_4_md_m and kbp_4_md_m.lower() not in ['нет', 'не пройдено', '']:
+        try:
+            kbp_date = datetime.strptime(kbp_4_md_m, "%d.%m.%Y")
+            now = datetime.now()
+            delta = kbp_date - now
+            
+            if delta.days < 0:
+                status_parts.append(f"🔴 КБП-4 (Ил-76 МД-М): {kbp_4_md_m} (Просрочено на {abs(delta.days)} дн.)")
+            elif delta.days < 30:
+                status_parts.append(f"🟡 КБП-4 (Ил-76 МД-М): {kbp_4_md_m} (Осталось {delta.days} дн.)")
+            else:
+                status_parts.append(f"🟢 КБП-4 (Ил-76 МД-М): {kbp_4_md_m} (Действует (осталось {delta.days} дн.))")
+        except:
+            pass
+    
+    # Проверка КБП-7 МД-М
+    kbp_7_md_m = user.get('kbp_7_md_m')
+    if kbp_7_md_m and kbp_7_md_m.lower() not in ['нет', 'не пройдено', '']:
+        try:
+            kbp_date = datetime.strptime(kbp_7_md_m, "%d.%m.%Y")
+            now = datetime.now()
+            delta = kbp_date - now
+            
+            if delta.days < 0:
+                status_parts.append(f"🔴 КБП-7 (Ил-76 МД-М): {kbp_7_md_m} (Просрочено на {abs(delta.days)} дн.)")
+            elif delta.days < 30:
+                status_parts.append(f"🟡 КБП-7 (Ил-76 МД-М): {kbp_7_md_m} (Осталось {delta.days} дн.)")
+            else:
+                status_parts.append(f"🟢 КБП-7 (Ил-76 МД-М): {kbp_7_md_m} (Действует (осталось {delta.days} дн.))")
+        except:
+            pass
+    
+    # Проверка КБП-4 МД-90А
+    kbp_4_md_90a = user.get('kbp_4_md_90a')
+    if kbp_4_md_90a and kbp_4_md_90a.lower() not in ['нет', 'не пройдено', '']:
+        try:
+            kbp_date = datetime.strptime(kbp_4_md_90a, "%d.%m.%Y")
+            now = datetime.now()
+            delta = kbp_date - now
+            
+            if delta.days < 0:
+                status_parts.append(f"🔴 КБП-4 (Ил-76 МД-90А): {kbp_4_md_90a} (Просрочено на {abs(delta.days)} дн.)")
+            elif delta.days < 30:
+                status_parts.append(f"🟡 КБП-4 (Ил-76 МД-90А): {kbp_4_md_90a} (Осталось {delta.days} дн.)")
+            else:
+                status_parts.append(f"🟢 КБП-4 (Ил-76 МД-90А): {kbp_4_md_90a} (Действует (осталось {delta.days} дн.))")
+        except:
+            pass
+    
+    # Проверка КБП-7 МД-90А
+    kbp_7_md_90a = user.get('kbp_7_md_90a')
+    if kbp_7_md_90a and kbp_7_md_90a.lower() not in ['нет', 'не пройдено', '']:
+        try:
+            kbp_date = datetime.strptime(kbp_7_md_90a, "%d.%m.%Y")
+            now = datetime.now()
+            delta = kbp_date - now
+            
+            if delta.days < 0:
+                status_parts.append(f"🔴 КБП-7 (Ил-76 МД-90А): {kbp_7_md_90a} (Просрочено на {abs(delta.days)} дн.)")
+            elif delta.days < 30:
+                status_parts.append(f"🟡 КБП-7 (Ил-76 МД-90А): {kbp_7_md_90a} (Осталось {delta.days} дн.)")
+            else:
+                status_parts.append(f"🟢 КБП-7 (Ил-76 МД-90А): {kbp_7_md_90a} (Действует (осталось {delta.days} дн.))")
+        except:
+            pass
+    
+    # Проверка прыжков
+    jumps = user.get('jumps_date')
+    if jumps and jumps.lower() not in ['нет', 'не пройдено', '']:
+        try:
+            jumps_date = datetime.strptime(jumps, "%d.%m.%Y")
+            now = datetime.now()
+            delta = jumps_date - now
+            
+            if delta.days < 0:
+                status_parts.append(f"🔴 Прыжки с ПДС: {jumps} (Просрочено на {abs(delta.days)} дн.)")
+            elif delta.days < 30:
+                status_parts.append(f"🟡 Прыжки с ПДС: {jumps} (Осталось {delta.days} дн.)")
+            else:
+                status_parts.append(f"🟢 Прыжки с ПДС: {jumps} (Действует (осталось {delta.days} дн.))")
+        except:
+            pass
+    
+    # Возвращаем все статусы
+    if status_parts:
+        return "\n".join(status_parts)
     else:
-        checks = [
-            (user.get('vlk_date'), "ВЛК"),
-            (user.get('umo_date'), "УМО"),
-            (user.get('kbp_4_md_m'), "КБП-4 МД-М"),
-            (user.get('kbp_7_md_m'), "КБП-7 МД-М"),
-            (user.get('kbp_4_md_90a'), "КБП-4 МД-90А"),
-            (user.get('kbp_7_md_90a'), "КБП-7 МД-90А"),
-        ]
-        
-        status_parts = []
-        has_warning = False
-        
-        for date_val, name in checks:
-            if date_val and date_val.lower() not in ['нет', 'не пройдено', 'б/к', '']:
-                color, msg = check_deadline_status(date_val, name)
-                if color == "red":
-                    status_parts.append(f"🔴 {msg}")
-                    has_warning = True
-                elif color == "yellow":
-                    status_parts.append(f"🟡 {msg}")
-                    has_warning = True
-        
-        if status_parts:
-            return "⚠️ <b>ВНИМАНИЕ:</b>\n" + "\n".join(status_parts)
-        else:
-            return "🟢 <b>Всё в порядке</b>"
+        return "🟢 <b>Всё в порядке</b>"
 
 # Маппинг полей
 FIELD_MAP = {
