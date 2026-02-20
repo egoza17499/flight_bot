@@ -1,6 +1,7 @@
 import asyncio
 import os
 import logging
+from datetime import datetime, timedelta
 from aiogram import Router, F, types
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
@@ -26,19 +27,17 @@ router = Router()
 
 # ========== ХРАНЕНИЕ ПОСЛЕДНИХ СООБЩЕНИЙ ==========
 last_bot_messages = {}
-last_sent_results = {}  # Для проверки дубликатов {chat_id: (query, result_text)}
+last_sent_results = {}
 
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
 async def delete_message_safe(message: types.Message):
-    """Безопасное удаление сообщения"""
     try:
         await message.delete()
     except Exception as e:
         logger.debug(f"Не удалось удалить сообщение: {e}")
 
 async def cleanup_last_bot_message(message: types.Message):
-    """Удаляет последнее сообщение бота в чате"""
     chat_id = message.chat.id
     if chat_id in last_bot_messages:
         try:
@@ -50,13 +49,11 @@ async def cleanup_last_bot_message(message: types.Message):
                 del last_bot_messages[chat_id]
 
 async def send_and_save(message: types.Message, text: str, **kwargs):
-    """Отправляет сообщение и сохраняет его ID"""
     sent_message = await message.answer(text, **kwargs)
     last_bot_messages[message.chat.id] = sent_message.message_id
     return sent_message
 
 def is_duplicate_result(chat_id: int, query: str, result_text: str) -> bool:
-    """Проверяет является ли результат дубликатом"""
     if chat_id in last_sent_results:
         last_query, last_result = last_sent_results[chat_id]
         if query.lower() == last_query.lower() and result_text == last_result:
@@ -64,15 +61,86 @@ def is_duplicate_result(chat_id: int, query: str, result_text: str) -> bool:
     return False
 
 def save_search_result(chat_id: int, query: str, result_text: str):
-    """Сохраняет последний результат поиска"""
     last_sent_results[chat_id] = (query, result_text)
 
 def is_admin_check(user_id):
-    """Проверяет является ли пользователь админом"""
     return user_id == ADMIN_ID
 
+def get_persistent_menu(is_admin=False):
+    """Постоянное закреплённое меню внизу"""
+    kb = [
+        [KeyboardButton(text="👤 Мой профиль"), KeyboardButton(text="📚 Полезная информация")],
+    ]
+    if is_admin:
+        kb.append([KeyboardButton(text="🛡 Функции админа")])
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True, persistent=True)
+
+def check_deadline_status(date_str, field_name=""):
+    """
+    Проверяет статус срока
+    Returns: (color, message)
+    - red: просрочено
+    - yellow: меньше 30 дней
+    - green: всё хорошо
+    """
+    if not date_str or date_str.lower() in ['нет', 'не пройдено', 'б/к', '']:
+        return "red", f"{field_name}: не пройдено"
+    
+    try:
+        # Пробуем распарсить дату в формате ДД.ММ.ГГГГ
+        deadline = datetime.strptime(date_str, "%d.%m.%Y")
+        now = datetime.now()
+        delta = deadline - now
+        
+        if delta.days < 0:
+            return "red", f"{field_name}: просрочено ({abs(delta.days)} дн. назад)"
+        elif delta.days < 30:
+            return "yellow", f"{field_name}: осталось {delta.days} дн."
+        else:
+            return "green", "OK"
+    except:
+        return "green", "OK"
+
+def get_user_status_with_colors(user):
+    """Формирует текст статуса пользователя с цветовой индикацией"""
+    bans = check_flight_ban(user)
+    
+    if bans:
+        # Есть нарушения - красным
+        status_text = "🔴 <b>НАРУШЕНИЯ:</b>\n"
+        for ban in bans:
+            status_text += f"  • {ban}\n"
+        return status_text
+    else:
+        # Проверяем все сроки
+        checks = [
+            (user.get('vlk_date'), "ВЛК"),
+            (user.get('umo_date'), "УМО"),
+            (user.get('kbp_4_md_m'), "КБП-4 МД-М"),
+            (user.get('kbp_7_md_m'), "КБП-7 МД-М"),
+            (user.get('kbp_4_md_90a'), "КБП-4 МД-90А"),
+            (user.get('kbp_7_md_90a'), "КБП-7 МД-90А"),
+        ]
+        
+        status_parts = []
+        has_warning = False
+        
+        for date_val, name in checks:
+            if date_val and date_val.lower() not in ['нет', 'не пройдено', 'б/к', '']:
+                color, msg = check_deadline_status(date_val, name)
+                if color == "red":
+                    status_parts.append(f"🔴 {msg}")
+                    has_warning = True
+                elif color == "yellow":
+                    status_parts.append(f"🟡 {msg}")
+                    has_warning = True
+        
+        if status_parts:
+            return "⚠️ <b>ВНИМАНИЕ:</b>\n" + "\n".join(status_parts)
+        else:
+            return "🟢 <b>Всё в порядке</b>"
+
 def extract_airport_info(query: str, result_text: str) -> str:
-    """Извлекает информацию о городе и аэродроме из результата"""
     info = ""
     query_lower = query.lower()
     
@@ -105,13 +173,14 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await send_and_save(
             message,
             "Добро пожаловать обратно! Выберите действие:",
-            reply_markup=get_main_menu(is_admin=admin)
+            reply_markup=get_persistent_menu(is_admin=admin)
         )
     else:
         await send_and_save(
             message,
             "👋 Приветствую! Для доступа к функциям необходимо пройти регистрацию.\n\n"
-            "Начнем? (Напишите /start еще раз или просто начните вводить данные)"
+            "Начнем? (Напишите /start еще раз или просто начните вводить данные)",
+            reply_markup=get_persistent_menu(is_admin=admin)
         )
         await state.set_state(Registration.fio)
         await send_and_save(message, "1️⃣ Введите вашу Фамилию Имя Отчество:")
@@ -205,20 +274,21 @@ async def reg_finish(message: types.Message, state: FSMContext):
     await set_registered(message.from_user.id)
     await state.clear()
     user = await get_user(message.from_user.id)
-    bans = check_flight_ban(user)
     admin = is_admin_check(message.from_user.id)
+    
+    bans = check_flight_ban(user)
     if bans:
         ban_text = "\n".join(bans)
         await send_and_save(
             message,
             f"⚠️ ВНИМАНИЕ!\n{ban_text}",
-            reply_markup=get_main_menu(is_admin=admin)
+            reply_markup=get_persistent_menu(is_admin=admin)
         )
     else:
         await send_and_save(
             message,
             "✅ Регистрация успешно завершена!",
-            reply_markup=get_main_menu(is_admin=admin)
+            reply_markup=get_persistent_menu(is_admin=admin)
         )
 
 # ========== ГЛАВНОЕ МЕНЮ ==========
@@ -230,10 +300,12 @@ async def show_profile(message: types.Message):
     if not user or not user.get('registered'):
         await send_and_save(message, "Сначала пройдите регистрацию (/start)")
         return
+    
     text = generate_profile_text(user)
     bans = check_flight_ban(user)
     if bans:
         text += "\n\n🚫 <b>ПОЛЕТЫ ЗАПРЕЩЕНЫ!</b>\n" + "\n".join(bans)
+    
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✏️ Редактировать", callback_data="edit_start")]])
     await send_and_save(message, text, reply_markup=kb)
 
@@ -262,7 +334,8 @@ async def process_search(message: types.Message, state: FSMContext):
     
     if query.lower() == "отмена" or query == "❌ Отмена":
         await state.clear()
-        await send_and_save(message, "❌ Поиск отменен", reply_markup=get_main_menu(is_admin=is_admin_check(message.from_user.id)))
+        admin = is_admin_check(message.from_user.id)
+        await send_and_save(message, "❌ Поиск отменен", reply_markup=get_persistent_menu(is_admin=admin))
         return
     
     results = await search_info(query)
@@ -384,13 +457,24 @@ async def admin_list_callback(callback: types.CallbackQuery):
         return
     
     output = "📋 <b>Список личного состава:</b>\n\n"
+    
     for i, u in enumerate(users, 1):
-        output += f"{i}. 👤 {u['fio']}\n"
-        output += f"   Звание: {u['rank']}\n"
+        # Добавляем кнопку с callback_data для просмотра полной анкеты
+        user_id = u['user_id']
+        fio = u['fio']
+        rank = u['rank']
+        
+        # Получаем статус с цветовой индикацией
+        status_text = get_user_status_with_colors(u)
+        
+        output += f"{i}. 👤 {fio}\n"
+        output += f"   Звание: {rank}\n"
         if u.get('qual_rank'):
             output += f"   Квалификация: {u['qual_rank']}\n"
-        output += "\n"
+        output += f"   {status_text}\n"
+        output += f"   /user{user_id}\n\n"
     
+    # Разбиваем на сообщения если больше 4000 символов
     chunks = [output[i:i+4000] for i in range(0, len(output), 4000)]
     for chunk in chunks:
         await callback.message.answer(chunk)
@@ -532,11 +616,17 @@ async def admin_list_cmd(message: types.Message):
     users = await get_all_users()
     output = "📋 <b>Список личного состава:</b>\n\n"
     for i, u in enumerate(users, 1):
-        output += f"{i}. 👤 {u['fio']}\n"
-        output += f"   Звание: {u['rank']}\n"
+        user_id = u['user_id']
+        fio = u['fio']
+        rank = u['rank']
+        status_text = get_user_status_with_colors(u)
+        
+        output += f"{i}. 👤 {fio}\n"
+        output += f"   Звание: {rank}\n"
         if u.get('qual_rank'):
             output += f"   Квалификация: {u['qual_rank']}\n"
-        output += "\n"
+        output += f"   {status_text}\n"
+        output += f"   /user{user_id}\n\n"
     
     chunks = [output[i:i+4000] for i in range(0, len(output), 4000)]
     for chunk in chunks:
@@ -572,7 +662,7 @@ async def cmd_cancel(message: types.Message, state: FSMContext):
     await send_and_save(
         message,
         "❌ Отменено",
-        reply_markup=get_main_menu(is_admin=admin)
+        reply_markup=get_persistent_menu(is_admin=admin)
     )
 
 @router.message(Command("help"))
@@ -589,6 +679,56 @@ async def cmd_help(message: types.Message):
         text += "/fill_airports - База"
     await send_and_save(message, text)
 
+# ========== ПРОСМОТР ПОЛНОЙ АНКЕТЫ ПОЛЬЗОВАТЕЛЯ ==========
+
+@router.message(F.text.startswith("/user"))
+async def show_user_full_profile(message: types.Message):
+    """Показывает полную анкету пользователя по команде /user{user_id}"""
+    try:
+        # Извлекаем user_id из команды /user123456789
+        user_id = int(message.text.replace("/user", ""))
+        user = await get_user(user_id)
+        
+        if not user:
+            await send_and_save(message, "❌ Пользователь не найден")
+            return
+        
+        # Формируем полную анкету
+        text = f"👤 <b>ПОЛНАЯ АНКЕТА</b>\n\n"
+        text += f"📋 <b>Основные данные:</b>\n"
+        text += f"• ФИО: {user.get('fio', 'Не указано')}\n"
+        text += f"• Звание: {user.get('rank', 'Не указано')}\n"
+        text += f"• Квалификация: {user.get('qual_rank', 'Не указано')}\n\n"
+        
+        text += f"📅 <b>Сроки и документы:</b>\n"
+        text += f"• Отпуск: {user.get('vacation_start', 'Не указано')} - {user.get('vacation_end', 'Не указано')}\n"
+        text += f"• ВЛК: {user.get('vlk_date', 'Не пройдено')}\n"
+        text += f"• УМО: {user.get('umo_date', 'Не пройдено')}\n\n"
+        
+        text += f"✈️ <b>КБП:</b>\n"
+        text += f"• КБП-4 МД-М: {user.get('kbp_4_md_m', 'Не пройдено')}\n"
+        text += f"• КБП-7 МД-М: {user.get('kbp_7_md_m', 'Не пройдено')}\n"
+        text += f"• КБП-4 МД-90А: {user.get('kbp_4_md_90a', 'Не пройдено')}\n"
+        text += f"• КБП-7 МД-90А: {user.get('kbp_7_md_90a', 'Не пройдено')}\n\n"
+        
+        text += f"🪂 <b>Прыжки:</b>\n"
+        text += f"• Дата: {user.get('jumps_date', 'Не указано')}\n\n"
+        
+        # Добавляем статус с цветовой индикацией
+        status_text = get_user_status_with_colors(user)
+        text += f"\n{status_text}\n"
+        
+        # Кнопка назад
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад к списку", callback_data="admin_list")]
+        ])
+        
+        await send_and_save(message, text, reply_markup=kb)
+        
+    except Exception as e:
+        logger.error(f"Ошибка показа анкеты: {e}")
+        await send_and_save(message, "❌ Ошибка при загрузке анкеты")
+
 # ========== ОБРАБОТКА ВСЕХ ТЕКСТОВЫХ СООБЩЕНИЙ (В САМОМ КОНЦЕ!) ==========
 
 @router.message(F.text)
@@ -598,11 +738,11 @@ async def handle_any_text(message: types.Message, state: FSMContext):
     # Проверяем текущее состояние
     current_state = await state.get_state()
     
-    # Если есть активное состояние — пропускаем (пусть обрабатывается другими хендлерами)
+    # Если есть активное состояние — пропускаем
     if current_state is not None:
         return
     
-    # Игнорируем ответы на сообщения бота (чтобы не зациклить)
+    # Игнорируем ответы на сообщения бота
     if message.reply_to_message and message.reply_to_message.from_user.id == message.bot.id:
         return
     
@@ -616,11 +756,11 @@ async def handle_any_text(message: types.Message, state: FSMContext):
         await send_and_save(
             message,
             "Добро пожаловать обратно! Выберите действие:",
-            reply_markup=get_main_menu(is_admin=admin)
+            reply_markup=get_persistent_menu(is_admin=admin)
         )
     else:
         await send_and_save(
             message,
             "👋 Приветствую! Для доступа к функциям необходимо пройти регистрацию.",
-            reply_markup=get_main_menu(is_admin=admin)
+            reply_markup=get_persistent_menu(is_admin=admin)
         )
