@@ -1,7 +1,9 @@
 from aiogram import Router, F, types
 from aiogram.filters import Command
-from . import start, profile, search, admin, common
+from aiogram.fsm.context import FSMContext  # ✅ Добавьте этот импорт!
+from . import start, profile, search, admin
 from .common import cleanup_last_bot_message, send_and_save, is_admin_check
+from keyboards import get_main_menu
 
 router = Router()
 
@@ -43,6 +45,6 @@ async def admin_menu_cmd(message: types.Message):
     await cleanup_last_bot_message(message)
     if not is_admin_check(message.from_user.id):
         return
-    await send_and_save(message, "🛡 <b>Панель админа</b>", reply_markup=get_admin_menu())
+    await send_and_save(message, "🛡 <b>Панель админа</b>", reply_markup=get_main_menu(is_admin=True))
 
 __all__ = ["router"]
