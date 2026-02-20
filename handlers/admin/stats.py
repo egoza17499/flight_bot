@@ -1,6 +1,6 @@
 from aiogram import Router, F, types
 from database import get_all_users
-from .common import is_admin_check
+from ..common import is_admin_check  # ✅ Две точки для подъема на уровень выше
 
 router = Router()
 
