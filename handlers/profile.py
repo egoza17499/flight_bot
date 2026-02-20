@@ -2,10 +2,10 @@ from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from states import EditProfile
-from database import get_user
+from database import get_user, update_user_field
 from utils import generate_profile_text, check_flight_ban
 from keyboards import get_edit_menu, FIELD_MAP, FIELD_NAMES
-from .common import cleanup_last_bot_message, send_and_save, update_user_field
+from .common import cleanup_last_bot_message, send_and_save
 
 router = Router()
 
