@@ -1,11 +1,10 @@
 from aiogram import Router, F, types
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from database import add_user, get_user, update_user_field, set_registered
 from states import Registration
-from utils import check_flight_ban, get_persistent_menu
-from config import ADMIN_ID
+from database import add_user, update_user_field, set_registered, get_user
+from utils import check_flight_ban, generate_profile_text
+from keyboards import get_main_menu
 from .common import cleanup_last_bot_message, send_and_save, is_admin_check
 
 router = Router()
@@ -21,14 +20,13 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await send_and_save(
             message,
             "Добро пожаловать обратно! Выберите действие:",
-            reply_markup=get_persistent_menu(is_admin=admin)
+            reply_markup=get_main_menu(is_admin=admin)
         )
     else:
         await send_and_save(
             message,
             "👋 Приветствую! Для доступа к функциям необходимо пройти регистрацию.\n\n"
-            "Начнем? (Напишите /start еще раз или просто начните вводить данные)",
-            reply_markup=get_persistent_menu(is_admin=admin)
+            "Начнем? (Напишите /start еще раз или просто начните вводить данные)"
         )
         await state.set_state(Registration.fio)
         await send_and_save(message, "1️⃣ Введите вашу Фамилию Имя Отчество:")
@@ -122,19 +120,18 @@ async def reg_finish(message: types.Message, state: FSMContext):
     await set_registered(message.from_user.id)
     await state.clear()
     user = await get_user(message.from_user.id)
-    admin = is_admin_check(message.from_user.id)
-    
     bans = check_flight_ban(user)
+    admin = is_admin_check(message.from_user.id)
     if bans:
         ban_text = "\n".join(bans)
         await send_and_save(
             message,
             f"⚠️ ВНИМАНИЕ!\n{ban_text}",
-            reply_markup=get_persistent_menu(is_admin=admin)
+            reply_markup=get_main_menu(is_admin=admin)
         )
     else:
         await send_and_save(
             message,
             "✅ Регистрация успешно завершена!",
-            reply_markup=get_persistent_menu(is_admin=admin)
+            reply_markup=get_main_menu(is_admin=admin)
         )
