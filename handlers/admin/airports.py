@@ -4,7 +4,7 @@ from aiogram import Router, F, types
 from aiogram.filters import Command
 from airports_data import AIRPORTS
 from database import add_info
-from .common import cleanup_last_bot_message, send_and_save, is_admin_check
+from ..common import cleanup_last_bot_message, send_and_save, is_admin_check  # ✅ ..common
 
 logger = logging.getLogger(__name__)
 router = Router()
