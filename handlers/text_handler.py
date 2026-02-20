@@ -9,6 +9,11 @@ router = Router()
 async def handle_any_text(message: types.Message, state: FSMContext):
     """Любое текстовое сообщение = возврат в меню, но только если нет активного состояния"""
     
+    # Игнорируем команды /user... (просмотр анкеты)
+    if message.text.startswith("/user"):
+        return  # Пропускаем, пусть обрабатывается другим хендлером
+    
+    # Проверяем текущее состояние
     current_state = await state.get_state()
     
     # Если есть активное состояние — пропускаем
