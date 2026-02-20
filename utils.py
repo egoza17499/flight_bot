@@ -1,227 +1,170 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 
-def parse_date(date_val):
-    """
-    Преобразует значение в объект date.
-    """
-    if date_val is None:
+def parse_date(date_str):
+    """Парсинг даты из строки"""
+    try:
+        return datetime.strptime(date_str, "%d.%m.%Y")
+    except:
         return None
-    
-    if isinstance(date_val, datetime):
-        return date_val.date()
-    
-    if isinstance(date_val, str):
-        # Проверяем на "освобожден"
-        if date_val.lower() in ['освобожден', 'освобождён', 'осв']:
-            return 'exempt'
-        
-        # Пытаемся распарсить дату
-        try:
-            return datetime.strptime(date_val, "%d.%m.%Y").date()
-        except ValueError:
-            return None
-    
-    if hasattr(date_val, 'strftime'):
-        return date_val
-    
-    return None
 
-def check_status(date_val, limit_months):
-    """
-    Проверяет статус даты относительно текущего времени.
-    Возвращает: (цвет, сообщение)
-    - green: действует (до limit_months)
-    - yellow: осталось < 30 дней
-    - red: просрочено
-    """
-    if date_val == 'exempt':
-        return 'blue', "Освобожден"
+def generate_profile_text(user):
+    """Генерация текста профиля пользователя"""
+    text = f"👤 <b>{user.get('fio', 'Не указано')}</b>\n\n"
+    text += f"🎖 <b>Звание:</b> {user.get('rank', 'Не указано')}\n"
+    text += f"📊 <b>Квалификация:</b> {user.get('qual_rank', 'Не указано')}\n\n"
     
-    if not date_val:
-        return 'red', "Нет данных"
+    text += f"📅 <b>Отпуск:</b> {user.get('vacation_start', 'Не указано')} - {user.get('vacation_end', 'Не указано')}\n"
+    text += f"🏥 <b>ВЛК:</b> {user.get('vlk_date', 'Не пройдено')}\n"
+    text += f"📝 <b>УМО:</b> {user.get('umo_date', 'Не пройдено')}\n\n"
     
-    today = datetime.now().date()
+    text += f"✈️ <b>КБП:</b>\n"
+    text += f"  • КБП-4 МД-М: {user.get('kbp_4_md_m', 'Не пройдено')}\n"
+    text += f"  • КБП-7 МД-М: {user.get('kbp_7_md_m', 'Не пройдено')}\n"
+    text += f"  • КБП-4 МД-90А: {user.get('kbp_4_md_90a', 'Не пройдено')}\n"
+    text += f"  • КБП-7 МД-90А: {user.get('kbp_7_md_90a', 'Не пройдено')}\n\n"
     
-    # Если date_val - это строка (из базы)
-    if isinstance(date_val, str):
-        try:
-            date_val = datetime.strptime(date_val, "%d.%m.%Y").date()
-        except ValueError:
-            return 'red', "Некорректная дата"
-    
-    # Считаем сколько дней прошло от даты
-    days_passed = (today - date_val).days
-    limit_days = limit_months * 30
-    
-    # Сколько дней осталось до истечения
-    days_left = limit_days - days_passed
-    
-    if days_passed < 0:
-        # Дата в будущем
-        return 'green', f"Действует (осталось {limit_days} дн.)"
-    elif days_left < 0:
-        # Просрочено
-        return 'red', f"Просрочено на {abs(days_left)} дн."
-    elif days_left < 30:
-        # Осталось мало времени
-        return 'yellow', f"Осталось {days_left} дн."
-    else:
-        # Действует
-        return 'green', f"Действует (осталось {days_left} дн.)"
-
-def generate_profile_text(user_data):
-    """Генерирует текст профиля с цветовой индикацией"""
-    text = f"👤 <b>{user_data['fio']}</b>\n"
-    text += f"🎖 <b>Звание:</b> {user_data['rank']}\n"
-    text += f"🏅 <b>Квалификация:</b> {user_data['qual_rank']}\n\n"
-    
-    # Парсим все даты
-    vacation_end = parse_date(user_data.get('vacation_end'))
-    vlk_date = parse_date(user_data.get('vlk_date'))
-    umo_date = parse_date(user_data.get('umo_date'))
-    kbp_4_md_m = parse_date(user_data.get('kbp_4_md_m'))
-    kbp_7_md_m = parse_date(user_data.get('kbp_7_md_m'))
-    kbp_4_md_90a = parse_date(user_data.get('kbp_4_md_90a'))
-    kbp_7_md_90a = parse_date(user_data.get('kbp_7_md_90a'))
-    jumps = user_data.get('jumps_date')  # Может быть "освобожден"
-    
-    today = datetime.now().date()
-    
-    # Вычисляем предельную дату для УМО (ВЛК + 12 месяцев)
-    vlk_expiry_date = None
-    if vlk_date and vlk_date != 'exempt':
-        vlk_expiry_date = vlk_date + timedelta(days=365)  # 12 месяцев
-    
-    # Функция для красивой строки
-    def line(name, date_val, limit_m):
-        # Проверяем на "освобожден"
-        if isinstance(date_val, str) and date_val.lower() in ['освобожден', 'освобождён', 'осв']:
-            return f"🔵 <b>{name}:</b> Освобожден\n"
-        
-        if date_val is None:
-            return f"⚪ <b>{name}:</b> Нет данных\n"
-        
-        # Стандартная проверка
-        status, msg = check_status(date_val, limit_m)
-        color_map = {'green': '🟢', 'yellow': '🟡', 'red': '🔴', 'blue': '🔵'}
-        date_str = date_val.strftime("%d.%m.%Y") if hasattr(date_val, 'strftime') else str(date_val)
-        return f"{color_map.get(status, '⚪')} <b>{name}:</b> {date_str} ({msg})\n"
-    
-    # Функция для УМО (проверка относительно ВЛК + 12 месяцев)
-    def umo_line(name, umo_date_val, vlk_expiry):
-        if isinstance(umo_date_val, str) and umo_date_val.lower() in ['освобожден', 'освобождён', 'осв']:
-            return f"🔵 <b>{name}:</b> Освобожден\n"
-        
-        if umo_date_val is None:
-            return f"⚪ <b>{name}:</b> Не пройдено\n"
-        
-        if vlk_expiry is None:
-            return f"⚪ <b>{name}:</b> Нет данных ВЛК\n"
-        
-        # Проверяем УМО относительно даты ВЛК + 12 месяцев
-        days_until_vlk_expiry = (vlk_expiry - today).days
-        umo_str = umo_date_val.strftime('%d.%m.%Y') if hasattr(umo_date_val, 'strftime') else str(umo_date_val)
-        
-        if days_until_vlk_expiry < 0:
-            # ВЛК просрочена, значит УМО тоже просрочено
-            return f"🔴 <b>{name}:</b> {umo_str} (Просрочено вместе с ВЛК)\n"
-        elif days_until_vlk_expiry < 30:
-            return f"🟡 <b>{name}:</b> {umo_str} (Осталось {days_until_vlk_expiry} дн.)\n"
-        else:
-            return f"🟢 <b>{name}:</b> {umo_str} (Действует, осталось {days_until_vlk_expiry} дн.)\n"
-
-    # Отпуск (12 месяцев от даты окончания)
-    text += line("Отпуск (конец):", vacation_end, 12)
-    
-    # ВЛК с учетом УМО
-    if vlk_date is None:
-        text += "⚪ <b>ВЛК:</b> Нет данных\n"
-    elif vlk_date == 'exempt':
-        text += "🔵 <b>ВЛК:</b> Освобожден\n"
-    else:
-        days_since_vlk = (today - vlk_date).days
-        
-        if days_since_vlk > 365:  # > 12 месяцев
-            text += f"🔴 <b>ВЛК:</b> {vlk_date.strftime('%d.%m.%Y')} (Просрочена на {days_since_vlk - 365} дн.)\n"
-        elif days_since_vlk > 180 and (umo_date is None or umo_date == 'exempt'):  # > 6 мес и нет УМО
-            text += f"🔴 <b>ВЛК:</b> {vlk_date.strftime('%d.%m.%Y')} (ТРЕБУЕТСЯ УМО)\n"
-        elif days_since_vlk > 180 and umo_date is not None and umo_date != 'exempt':  # > 6 мес но есть УМО
-            remaining = 365 - days_since_vlk
-            text += f"🟢 <b>ВЛК:</b> {vlk_date.strftime('%d.%m.%Y')} (Действует с УМО, осталось {remaining} дн.)\n"
-        else:  # <= 6 месяцев
-            remaining = 180 - days_since_vlk
-            text += f"🟢 <b>ВЛК:</b> {vlk_date.strftime('%d.%m.%Y')} (Действует, осталось {remaining} дн.)\n"
-    
-    # УМО (действует только если ВЛК действительна, и до даты ВЛК + 12 месяцев)
-    text += umo_line("УМО:", umo_date, vlk_expiry_date)
-    
-    # КБП проверки
-    text += line("КБП-4 (Ил-76 МД-М):", kbp_4_md_m, 6)
-    text += line("КБП-7 (Ил-76 МД-М):", kbp_7_md_m, 12)
-    text += line("КБП-4 (Ил-76 МД-90А):", kbp_4_md_90a, 6)
-    # Для КБП-7 МД-90А используем стандартную проверку (12 месяцев)
-    text += line("КБП-7 (Ил-76 МД-90А):", kbp_7_md_90a, 12)
-    
-    # Прыжки (может быть "освобожден")
-    if isinstance(jumps, str) and jumps.lower() in ['освобожден', 'освобождён', 'осв']:
-        text += "🔵 <b>Прыжки с ПДС:</b> Освобожден\n"
-    else:
-        jumps_parsed = parse_date(jumps)
-        text += line("Прыжки с ПДС:", jumps_parsed, 12)
+    text += f"🪂 <b>Прыжки:</b> {user.get('jumps_date', 'Не указано')}\n"
     
     return text
 
-def check_flight_ban(user_data):
-    """Проверяет запреты и возвращает список причин"""
+def check_flight_ban(user):
+    """Проверка запретов на полеты"""
     bans = []
-    today = datetime.now().date()
     
-    # Вспомогательная функция
-    def is_expired(date_val, months):
-        # Если освобожден - не считается просрочкой
-        if isinstance(date_val, str) and date_val.lower() in ['освобожден', 'освобождён', 'осв']:
-            return False
-        
-        if not date_val:
-            return False
-        
-        # Парсим дату
-        parsed = parse_date(date_val)
-        if not parsed or parsed == 'exempt':
-            return False
-        
-        days_passed = (today - parsed).days
-        return days_passed > months * 30
-
-    # КБП проверки
-    if is_expired(user_data.get('kbp_4_md_m'), 6):
-        bans.append("🚫 Запрет полетов: КБП-4 (Ил-76 МД-М) просрочен")
-    if is_expired(user_data.get('kbp_7_md_m'), 12):
-        bans.append("🚫 Запрет полетов: КБП-7 (Ил-76 МД-М) просрочен")
-    if is_expired(user_data.get('kbp_4_md_90a'), 6):
-        bans.append("🚫 Запрет полетов: КБП-4 (Ил-76 МД-90А) просрочен")
-    if is_expired(user_data.get('kbp_7_md_90a'), 12):
-        bans.append("🚫 Запрет полетов: КБП-7 (Ил-76 МД-90А) просрочен")
-        
-    # ВЛК и УМО
-    vlk = parse_date(user_data.get('vlk_date'))
-    umo = parse_date(user_data.get('umo_date'))
+    # Проверка ВЛК
+    vlk = user.get('vlk_date')
+    if vlk:
+        try:
+            vlk_date = datetime.strptime(vlk, "%d.%m.%Y")
+            if (datetime.now() - vlk_date).days > 365:
+                bans.append("🔴 ВЛК: просрочено")
+        except:
+            pass
     
-    if vlk and vlk != 'exempt':
-        days_since_vlk = (today - vlk).days
-        
-        if days_since_vlk > 365:  # > 12 месяцев
-            bans.append("🚫 Запрет полетов: ВЛК просрочена (>12 мес)")
-        elif days_since_vlk > 180 and (umo is None or umo == 'exempt'):  # > 6 мес и нет УМО
-            bans.append("🚫 Запрет полетов: ВЛК > 6 мес без УМО")
-             
-    if is_expired(user_data.get('vacation_end'), 12):
-        bans.append("🚫 Запрет полетов: Отпуск (>12 мес)")
-        
-    # Прыжки - проверяем только если не освобожден
-    jumps = user_data.get('jumps_date')
-    if jumps and not (isinstance(jumps, str) and jumps.lower() in ['освобожден', 'освобождён', 'осв']):
-        if is_expired(jumps, 12):
-            bans.append("🚫 Запрет полетов: Прыжки (>12 мес)")
-        
+    # Проверка УМО
+    umo = user.get('umo_date')
+    if umo and umo.lower() not in ['нет', 'не пройдено']:
+        try:
+            umo_date = datetime.strptime(umo, "%d.%m.%Y")
+            if (datetime.now() - umo_date).days > 365:
+                bans.append("🔴 УМО: просрочено")
+        except:
+            pass
+    
     return bans
+
+def extract_airport_info(query: str, result_text: str) -> str:
+    """Извлекает информацию о городе и аэродроме"""
+    info = ""
+    query_lower = query.lower()
+    
+    airports_map = {
+        "стригино": ("Нижний Новгород", "Аэропорт Стригино"),
+        "чкаловский": ("Москва", "Аэродром Чкаловский"),
+        "пулково": ("Санкт-Петербург", "Аэропорт Пулково"),
+        "внуково": ("Москва", "Аэропорт Внуково"),
+        "кольцово": ("Екатеринбург", "Аэропорт Кольцово"),
+    }
+    
+    for key, (city, airport) in airports_map.items():
+        if key in query_lower:
+            info += f"🏙 <b>Город:</b> {city}\n"
+            info += f"✈️ <b>Аэродром:</b> {airport}"
+            break
+    
+    return info
+
+def get_persistent_menu(is_admin=False):
+    """Постоянное закреплённое меню внизу"""
+    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+    kb = [
+        [KeyboardButton(text="👤 Мой профиль"), KeyboardButton(text="📚 Полезная информация")],
+    ]
+    if is_admin:
+        kb.append([KeyboardButton(text="🛡 Функции админа")])
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True, persistent=True)
+
+def check_deadline_status(date_str, field_name=""):
+    """Проверяет статус срока"""
+    if not date_str or date_str.lower() in ['нет', 'не пройдено', 'б/к', '']:
+        return "red", f"{field_name}: не пройдено"
+    
+    try:
+        deadline = datetime.strptime(date_str, "%d.%m.%Y")
+        now = datetime.now()
+        delta = deadline - now
+        
+        if delta.days < 0:
+            return "red", f"{field_name}: просрочено ({abs(delta.days)} дн. назад)"
+        elif delta.days < 30:
+            return "yellow", f"{field_name}: осталось {delta.days} дн."
+        else:
+            return "green", "OK"
+    except:
+        return "green", "OK"
+
+def get_user_status_with_colors(user):
+    """Формирует текст статуса пользователя с цветовой индикацией"""
+    bans = check_flight_ban(user)
+    
+    if bans:
+        status_text = "🔴 <b>НАРУШЕНИЯ:</b>\n"
+        for ban in bans:
+            status_text += f"  • {ban}\n"
+        return status_text
+    else:
+        checks = [
+            (user.get('vlk_date'), "ВЛК"),
+            (user.get('umo_date'), "УМО"),
+            (user.get('kbp_4_md_m'), "КБП-4 МД-М"),
+            (user.get('kbp_7_md_m'), "КБП-7 МД-М"),
+            (user.get('kbp_4_md_90a'), "КБП-4 МД-90А"),
+            (user.get('kbp_7_md_90a'), "КБП-7 МД-90А"),
+        ]
+        
+        status_parts = []
+        has_warning = False
+        
+        for date_val, name in checks:
+            if date_val and date_val.lower() not in ['нет', 'не пройдено', 'б/к', '']:
+                color, msg = check_deadline_status(date_val, name)
+                if color == "red":
+                    status_parts.append(f"🔴 {msg}")
+                    has_warning = True
+                elif color == "yellow":
+                    status_parts.append(f"🟡 {msg}")
+                    has_warning = True
+        
+        if status_parts:
+            return "⚠️ <b>ВНИМАНИЕ:</b>\n" + "\n".join(status_parts)
+        else:
+            return "🟢 <b>Всё в порядке</b>"
+
+# Маппинг полей
+FIELD_MAP = {
+    "fio": "fio",
+    "rank": "rank",
+    "qual_rank": "qual_rank",
+    "vacation": "vacation",
+    "vlk_date": "vlk_date",
+    "umo_date": "umo_date",
+    "kbp_4_md_m": "kbp_4_md_m",
+    "kbp_7_md_m": "kbp_7_md_m",
+    "kbp_4_md_90a": "kbp_4_md_90a",
+    "kbp_7_md_90a": "kbp_7_md_90a",
+    "jumps_date": "jumps_date"
+}
+
+FIELD_NAMES = {
+    "fio": "ФИО",
+    "rank": "Звание",
+    "qual_rank": "Квалификационный разряд",
+    "vacation": "Отпуск (ДД.ММ.ГГГГ - ДД.ММ.ГГГГ)",
+    "vlk_date": "ВЛК (ДД.ММ.ГГГГ)",
+    "umo_date": "УМО (ДД.ММ.ГГГГ или 'нет')",
+    "kbp_4_md_m": "КБП-4 Ил-76 МД-М",
+    "kbp_7_md_m": "КБП-7 Ил-76 МД-М",
+    "kbp_4_md_90a": "КБП-4 Ил-76 МД-90А",
+    "kbp_7_md_90a": "КБП-7 Ил-76 МД-90А",
+    "jumps_date": "Прыжки (ДД.ММ.ГГГГ или 'освобожден')"
+}
