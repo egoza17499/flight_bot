@@ -1,7 +1,7 @@
 from aiogram import Router, F, types
 from database import get_all_users
 from utils import check_flight_ban
-from .common import is_admin_check
+from ..common import is_admin_check  # ✅ ..common
 
 router = Router()
 
