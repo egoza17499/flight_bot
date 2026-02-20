@@ -1,27 +1,25 @@
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from states import EditProfile
 from database import get_user, update_user_field
-from utils import generate_profile_text, check_flight_ban
+from states import EditProfile
 from keyboards import get_edit_menu, FIELD_MAP, FIELD_NAMES
-from .common import cleanup_last_bot_message, send_and_save
+from utils import generate_profile_text, check_flight_ban
 
 router = Router()
 
 @router.message(F.text == "👤 Мой профиль")
 async def show_profile(message: types.Message):
-    await cleanup_last_bot_message(message)
     user = await get_user(message.from_user.id)
     if not user or not user.get('registered'):
-        await send_and_save(message, "Сначала пройдите регистрацию (/start)")
+        await message.answer("Сначала пройдите регистрацию (/start)")
         return
     text = generate_profile_text(user)
     bans = check_flight_ban(user)
     if bans:
         text += "\n\n🚫 <b>ПОЛЕТЫ ЗАПРЕЩЕНЫ!</b>\n" + "\n".join(bans)
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✏️ Редактировать", callback_data="edit_start")]])
-    await send_and_save(message, text, reply_markup=kb)
+    await message.answer(text, reply_markup=kb)
 
 @router.callback_query(F.data == "edit_start")
 async def start_edit(callback: types.CallbackQuery):
@@ -53,11 +51,10 @@ async def back_to_profile(callback: types.CallbackQuery, state: FSMContext):
 
 @router.message(EditProfile.entering_value)
 async def save_edit(message: types.Message, state: FSMContext):
-    await cleanup_last_bot_message(message)
     data = await state.get_data()
     field_key = data.get('edit_field')
     if not field_key:
-        await send_and_save(message, "❌ Ошибка")
+        await message.answer("❌ Ошибка")
         await state.clear()
         return
     if field_key == "vacation":
@@ -65,11 +62,11 @@ async def save_edit(message: types.Message, state: FSMContext):
         if len(parts) == 2:
             await update_user_field(message.from_user.id, 'vacation_start', parts[0].strip())
             await update_user_field(message.from_user.id, 'vacation_end', parts[1].strip())
-            await send_and_save(message, "✅ Обновлено!")
+            await message.answer("✅ Обновлено!")
     else:
         db_field = FIELD_MAP.get(field_key)
         if db_field:
             await update_user_field(message.from_user.id, db_field, message.text)
-            await send_and_save(message, "✅ Обновлено!")
+            await message.answer("✅ Обновлено!")
     await state.clear()
     await show_profile(message)
