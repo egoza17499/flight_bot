@@ -2,7 +2,7 @@ from aiogram import Router, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from database import get_all_users
 from utils import get_user_status_with_colors
-from .common import is_admin_check
+from ..common import is_admin_check, cleanup_last_bot_message, send_and_save  # ✅ Изменили импорт
 
 router = Router()
 
@@ -66,6 +66,7 @@ async def admin_list_cmd(message: types.Message):
 async def show_user_full_profile(message: types.Message):
     """Показывает полную анкету пользователя по команде /user{user_id}"""
     try:
+        from database import get_user
         user_id = int(message.text.replace("/user", ""))
         user = await get_user(user_id)
         
@@ -103,5 +104,7 @@ async def show_user_full_profile(message: types.Message):
         await send_and_save(message, text, reply_markup=kb)
         
     except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
         logger.error(f"Ошибка показа анкеты: {e}")
         await send_and_save(message, "❌ Ошибка при загрузке анкеты")
