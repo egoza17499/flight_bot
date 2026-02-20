@@ -1,11 +1,25 @@
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
-from database import add_admin, remove_admin, get_all_admins
+from aiogram.filters import Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from states import AdminStates
-from keyboards import get_admin_manage_menu, get_admin_menu, get_main_menu
-from ..common import cleanup_last_bot_message, send_and_save, is_admin_check  # ✅ Изменили импорт
+from database import add_admin, remove_admin, get_all_admins
+from keyboards import get_admin_menu, get_admin_manage_menu
+from .common import cleanup_last_bot_message, send_and_save, is_admin_check
 
 router = Router()
+
+@router.message(F.text == "🛡 Функции админа")
+async def admin_menu_button(message: types.Message):
+    await cleanup_last_bot_message(message)
+    if not is_admin_check(message.from_user.id):
+        await send_and_save(message, "❌ Доступ запрещен.")
+        return
+    await send_and_save(
+        message,
+        "🛡 <b>Панель администратора</b>\n\nВыберите действие:",
+        reply_markup=get_admin_menu()
+    )
 
 @router.callback_query(F.data == "admin_manage")
 async def admin_manage_callback(callback: types.CallbackQuery):
@@ -52,7 +66,7 @@ async def admin_menu_back_callback(callback: types.CallbackQuery):
 async def admin_back_callback(callback: types.CallbackQuery):
     if not is_admin_check(callback.from_user.id):
         return
-    await callback.message.answer("Выберите действие:", reply_markup=get_main_menu(is_admin=True))
+    await callback.message.answer("Выберите действие:", reply_markup=get_admin_menu(is_admin=True))
     await callback.answer()
 
 @router.message(AdminStates.adding_admin)
