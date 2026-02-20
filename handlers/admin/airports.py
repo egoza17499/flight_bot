@@ -1,9 +1,10 @@
 import asyncio
 import logging
 from aiogram import Router, F, types
-from database import add_info
+from aiogram.filters import Command
+from database import add_info, get_all_users
 from airports_data import AIRPORTS
-from .common import is_admin_check
+from ..common import is_admin_check, cleanup_last_bot_message, send_and_save  # ✅ Исправлен импорт
 
 logger = logging.getLogger(__name__)
 
